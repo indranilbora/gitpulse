@@ -1,0 +1,20 @@
+[package]
+name = "gitpulse"
+version = "0.1.0"
+edition = "2021"
+description = "Monitor all your git repos from one TUI"
+license = "MIT"
+keywords = ["git", "tui", "terminal", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+tokio = { version = "1", features = ["full"] }
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+chrono = "0.4"
+anyhow = "1"
+notify = "6"

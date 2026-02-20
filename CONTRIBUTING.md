@@ -1,0 +1,51 @@
+# Contributing
+
+## Prerequisites
+
+- Rust stable toolchain
+- Git available in `PATH`
+
+Install toolchain:
+
+```bash
+rustup toolchain install stable
+rustup default stable
+```
+
+## Local development
+
+```bash
+cargo run
+```
+
+Use setup with a custom config path when testing:
+
+```bash
+cargo run -- --setup --config /tmp/gitpulse-dev.toml
+cargo run -- --config /tmp/gitpulse-dev.toml
+```
+
+## Quality checks
+
+```bash
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+## Project layout
+
+- `src/main.rs`: CLI entrypoint, event loop, non-interactive output
+- `src/setup.rs`: interactive setup and config writing
+- `src/config.rs`: config schema and loading
+- `src/scanner.rs`: repo discovery
+- `src/git.rs`: status collection via git commands
+- `src/monitor.rs`: scan orchestration + status cache
+- `src/ui/`: ratatui rendering components
+- `tests/integration.rs`: end-to-end integration tests against real repos
+
+## Release flow
+
+- Tag `v*` to trigger `.github/workflows/release.yml`
+- Workflow builds platform binaries and publishes to crates.io
+- Ensure `CARGO_REGISTRY_TOKEN` is configured in repository secrets

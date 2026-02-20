@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            asset_name: gitpulse-macos-arm64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            asset_name: gitpulse-macos-x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            asset_name: gitpulse-linux-x86_64
+            use_cross: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            asset_name: gitpulse-linux-arm64
+            use_cross: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            asset_name: gitpulse-windows-x86_64.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (Linux cross-compilation)
+        if: matrix.use_cross == true
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build with cargo (native)
+        if: matrix.use_cross != true
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Build with cross (cross-compiled)
+        if: matrix.use_cross == true
+        run: cross build --release --locked --target ${{ matrix.target }}
+
+      - name: Rename binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cp target/${{ matrix.target }}/release/gitpulse ${{ matrix.asset_name }}
+
+      - name: Rename binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          Copy-Item "target\${{ matrix.target }}\release\gitpulse.exe" "${{ matrix.asset_name }}"
+
+      - name: Generate SHA256 checksum (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          shasum -a 256 ${{ matrix.asset_name }} > ${{ matrix.asset_name }}.sha256
+
+      - name: Generate SHA256 checksum (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          Get-FileHash "${{ matrix.asset_name }}" -Algorithm SHA256 |
+            Select-Object -ExpandProperty Hash |
+            ForEach-Object { "$_ ${{ matrix.asset_name }}" } |
+            Out-File -Encoding ascii "${{ matrix.asset_name }}.sha256"
+
+      - name: Upload binary
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.asset_name }}
+            ${{ matrix.asset_name }}.sha256
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
