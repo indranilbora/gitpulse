@@ -54,7 +54,7 @@ cargo test
 - Recompute Homebrew crate checksum with:
   ```bash
   VERSION=0.1.0
-  cargo package --allow-dirty --no-verify --offline
+  cargo package --no-verify --offline
   shasum -a 256 target/package/gitpulse-${VERSION}.crate
   ```
 - After pushing formula updates, verify tap install with:
