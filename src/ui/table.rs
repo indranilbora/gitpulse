@@ -61,13 +61,14 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
     if filtered.is_empty() {
         let msg = if app.filter_text.is_empty() {
-            "No repos found. Check your config: ~/.config/gitpulse/config.toml".to_string()
+            "No repositories found — run `gitpulse --setup` to configure watch directories"
+                .to_string()
         } else {
             format!("No repos matching \"{}\"", app.filter_text)
         };
         frame.render_widget(
             Paragraph::new(msg)
-                .block(Block::bordered())
+                .block(Block::bordered().border_style(Style::default().fg(Color::DarkGray)))
                 .alignment(Alignment::Center)
                 .style(Style::default().fg(Color::DarkGray)),
             area,
@@ -179,7 +180,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
     let table = Table::new(rows, widths)
         .header(header)
-        .block(Block::bordered())
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
         .row_highlight_style(
             Style::default()
                 .add_modifier(Modifier::REVERSED)

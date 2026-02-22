@@ -11,6 +11,9 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 const MIN_WIDTH: u16 = 40;
 const MIN_HEIGHT: u16 = 10;
@@ -61,12 +64,17 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) 
         format!(" {}", msg)
     } else {
         let scanning = if app.is_scanning {
-            "  [scanning…]"
+            let millis = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let frame = ((millis / 100) as usize) % SPINNER.len();
+            format!("  {} scanning", SPINNER[frame])
         } else {
-            ""
+            String::new()
         };
         format!(
-            " Enter:open  o:finder  r:refresh  f:fetch  p:pull  P:push  c:commit  g:group  /:filter  s:setup  ?:help  q:quit{}",
+            " ↵ open  o finder  r refresh  ·  f fetch  p pull  P push  c commit  ·  g group  / filter  s setup  ? help  q quit{}",
             scanning
         )
     };

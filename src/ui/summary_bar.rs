@@ -45,8 +45,19 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         total, dirty, unpushed, scan_info, filter_hint
     );
 
+    let filtered_count = app.filtered_repos().len();
+    let mut status_spans = vec![Span::raw(status_line)];
+    if filtered_count > 0 {
+        let display_index = app.selected.min(filtered_count.saturating_sub(1));
+        status_spans.push(Span::raw("  │  "));
+        status_spans.push(Span::styled(
+            format!("{} of {}", display_index + 1, filtered_count),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+
     // Warn about configured directories that don't exist on disk
-    let mut lines = vec![Line::from(status_line)];
+    let mut lines = vec![Line::from(status_spans)];
     if !app.config.missing_directories.is_empty() {
         let names: Vec<String> = app
             .config
