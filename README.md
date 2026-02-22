@@ -13,6 +13,33 @@ GitPulse is a terminal UI for monitoring many local Git repositories in one plac
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew tap indranilbora/gitpulse https://github.com/indranilbora/gitpulse
+brew install gitpulse
+```
+
+Upgrade:
+
+```bash
+brew update
+brew upgrade gitpulse
+```
+
+Uninstall:
+
+```bash
+brew uninstall gitpulse
+brew untap indranilbora/gitpulse
+```
+
+Use development `main` branch build:
+
+```bash
+brew install --HEAD gitpulse
+```
+
 ### From source
 
 ```bash

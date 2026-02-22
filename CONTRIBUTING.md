@@ -49,3 +49,18 @@ cargo test
 - Tag `v*` to trigger `.github/workflows/release.yml`
 - Workflow builds platform binaries and publishes to crates.io
 - Ensure `CARGO_REGISTRY_TOKEN` is configured in repository secrets
+- Homebrew tap formula is in `Formula/gitpulse.rb`
+- After tagging a new release, bump `url`, `version`, and `sha256` in `Formula/gitpulse.rb`
+- Recompute Homebrew source tarball checksum with:
+  ```bash
+  VERSION=0.1.0
+  curl -L "https://github.com/indranilbora/gitpulse/archive/refs/tags/v${VERSION}.tar.gz" -o /tmp/gitpulse-v${VERSION}.tar.gz
+  shasum -a 256 /tmp/gitpulse-v${VERSION}.tar.gz
+  ```
+- After pushing formula updates, verify tap install with:
+  ```bash
+  brew untap indranilbora/gitpulse || true
+  brew tap indranilbora/gitpulse https://github.com/indranilbora/gitpulse
+  brew install --build-from-source gitpulse
+  brew test gitpulse
+  ```
