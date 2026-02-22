@@ -3,6 +3,22 @@
 version = 4
 
 [[package]]
+name = "agentpulse"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dirs",
+ "notify",
+ "ratatui",
+ "serde",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -371,22 +387,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi",
-]
-
-[[package]]
-name = "gitpulse"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "crossterm",
- "dirs",
- "notify",
- "ratatui",
- "serde",
- "tokio",
- "toml",
 ]
 
 [[package]]

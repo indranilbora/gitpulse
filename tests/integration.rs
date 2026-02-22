@@ -1,4 +1,4 @@
-/// Integration tests for GitPulse scanner + git status checker.
+/// Integration tests for AgentPulse scanner + git status checker.
 ///
 /// Each test creates real git repositories in a temp directory and exercises
 /// the scanner and/or status-checking code against them.
@@ -8,7 +8,9 @@ use std::process::Command;
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 fn tmp_dir(name: &str) -> PathBuf {
-    let base = std::env::temp_dir().join("gitpulse_integration").join(name);
+    let base = std::env::temp_dir()
+        .join("agentpulse_integration")
+        .join(name);
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(&base).unwrap();
     base
@@ -56,7 +58,7 @@ fn test_scanner_finds_five_repos() {
         init_repo(&base, name);
     }
 
-    let found = gitpulse::scanner::find_repos(std::slice::from_ref(&base), 3);
+    let found = agentpulse::scanner::find_repos(std::slice::from_ref(&base), 3);
     assert_eq!(
         found.len(),
         5,
@@ -87,7 +89,7 @@ fn test_scanner_does_not_recurse_into_repo() {
     std::fs::create_dir_all(&inner).unwrap();
     git(&inner, &["init"]);
 
-    let found = gitpulse::scanner::find_repos(std::slice::from_ref(&base), 5);
+    let found = agentpulse::scanner::find_repos(std::slice::from_ref(&base), 5);
     // Only `outer` should appear; scanner stops at first .git
     assert_eq!(found.len(), 1);
     assert_eq!(found[0], outer);
@@ -101,10 +103,10 @@ fn test_scanner_respects_depth_limit() {
     std::fs::create_dir_all(&deep).unwrap();
     git(&deep, &["init"]);
 
-    let found_shallow = gitpulse::scanner::find_repos(std::slice::from_ref(&base), 2);
+    let found_shallow = agentpulse::scanner::find_repos(std::slice::from_ref(&base), 2);
     assert!(found_shallow.is_empty(), "depth=2 should miss depth-4 repo");
 
-    let found_deep = gitpulse::scanner::find_repos(std::slice::from_ref(&base), 4);
+    let found_deep = agentpulse::scanner::find_repos(std::slice::from_ref(&base), 4);
     assert_eq!(found_deep.len(), 1);
 }
 
@@ -115,7 +117,7 @@ async fn test_status_clean_repo() {
     let base = tmp_dir("status_clean");
     let repo = init_repo(&base, "clean");
 
-    let status = gitpulse::git::check_repo_status(&repo).await.unwrap();
+    let status = agentpulse::git::check_repo_status(&repo).await.unwrap();
     assert_eq!(
         status.uncommitted_count, 0,
         "clean repo should have 0 uncommitted"
@@ -130,7 +132,7 @@ async fn test_status_untracked_file() {
     let repo = init_repo(&base, "dirty");
     add_untracked(&repo, "new_file.txt");
 
-    let status = gitpulse::git::check_repo_status(&repo).await.unwrap();
+    let status = agentpulse::git::check_repo_status(&repo).await.unwrap();
     assert_eq!(status.uncommitted_count, 1);
 }
 
@@ -140,7 +142,7 @@ async fn test_status_staged_file() {
     let repo = init_repo(&base, "staged");
     add_staged(&repo, "staged.txt");
 
-    let status = gitpulse::git::check_repo_status(&repo).await.unwrap();
+    let status = agentpulse::git::check_repo_status(&repo).await.unwrap();
     assert_eq!(status.uncommitted_count, 1);
 }
 
@@ -152,7 +154,7 @@ async fn test_status_multiple_dirty_files() {
     add_untracked(&repo, "b.txt");
     add_staged(&repo, "c.txt");
 
-    let status = gitpulse::git::check_repo_status(&repo).await.unwrap();
+    let status = agentpulse::git::check_repo_status(&repo).await.unwrap();
     assert_eq!(status.uncommitted_count, 3);
 }
 
@@ -161,7 +163,7 @@ async fn test_status_no_remote() {
     let base = tmp_dir("status_no_remote");
     let repo = init_repo(&base, "norepo");
 
-    let status = gitpulse::git::check_repo_status(&repo).await.unwrap();
+    let status = agentpulse::git::check_repo_status(&repo).await.unwrap();
     assert!(!status.has_remote);
     assert_eq!(status.unpushed_count, 0);
 }
@@ -172,7 +174,7 @@ async fn test_status_branch_name() {
     let repo = init_repo(&base, "branched");
     git(&repo, &["checkout", "-b", "feature/test"]);
 
-    let status = gitpulse::git::check_repo_status(&repo).await.unwrap();
+    let status = agentpulse::git::check_repo_status(&repo).await.unwrap();
     assert_eq!(status.branch, "feature/test");
     assert!(!status.is_detached);
 }
@@ -181,7 +183,7 @@ async fn test_status_branch_name() {
 
 #[tokio::test]
 async fn test_urgency_ordering() {
-    use gitpulse::git::{Repo, RepoStatus, StatusColor};
+    use agentpulse::git::{Repo, RepoStatus, StatusColor};
 
     let make = |uncommitted: usize, unpushed: usize, has_remote: bool| {
         let mut r = Repo::new(PathBuf::from("/tmp/test"));
@@ -225,7 +227,7 @@ async fn test_monitor_dirty_repos_sorted_first() {
     let clean2 = init_repo(&base, "gamma_clean");
     add_untracked(&dirty, "change.txt");
 
-    let cfg = gitpulse::config::Config {
+    let cfg = agentpulse::config::Config {
         watch_directories: vec![base.clone()],
         refresh_interval_secs: 60,
         max_scan_depth: 2,
@@ -236,8 +238,8 @@ async fn test_monitor_dirty_repos_sorted_first() {
         missing_directories: vec![],
     };
 
-    let mut cache = gitpulse::monitor::StatusCache::new();
-    let repos = gitpulse::monitor::scan_all(&cfg, &mut cache).await;
+    let mut cache = agentpulse::monitor::StatusCache::new();
+    let repos = agentpulse::monitor::scan_all(&cfg, &mut cache).await;
 
     assert_eq!(repos.len(), 3);
     // dirty repo should be first

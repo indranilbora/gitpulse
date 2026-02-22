@@ -13,10 +13,10 @@ pub fn run_setup(existing: Option<&Config>, config_path: Option<&PathBuf>) -> Re
 
     println!();
     println!("  ╔══════════════════════════════════════╗");
-    println!("  ║       GitPulse — Setup Wizard        ║");
+    println!("  ║      AgentPulse — Setup Wizard       ║");
     println!("  ╚══════════════════════════════════════╝");
     println!();
-    println!("  GitPulse will scan directories you choose for git repos.");
+    println!("  AgentPulse will scan directories you choose for git repos.");
     println!();
 
     // Gather suggestions: standard dirs that actually exist on disk
@@ -138,7 +138,7 @@ pub fn run_setup(existing: Option<&Config>, config_path: Option<&PathBuf>) -> Re
 
     println!();
     println!("  Saved to {}", path.display());
-    println!("  Tip: run `gitpulse --setup` anytime to change these.");
+    println!("  Tip: run `agentpulse --setup` anytime to change these.");
     println!();
 
     Ok(config)
@@ -168,8 +168,8 @@ pub fn save_config(config: &Config, path: &Path) -> Result<()> {
     // Serialise to TOML, then prepend a comment block
     let body = toml::to_string_pretty(config)?;
     let content = format!(
-        "# GitPulse configuration\n\
-         # Run `gitpulse --setup` to reconfigure watch directories.\n\
+        "# AgentPulse configuration\n\
+         # Run `agentpulse --setup` to reconfigure watch directories.\n\
          # See README.md for all options.\n\n\
          {}",
         body

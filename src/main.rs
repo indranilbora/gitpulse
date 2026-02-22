@@ -1,4 +1,5 @@
 mod actions;
+mod agent;
 mod app;
 mod config;
 mod git;
@@ -7,11 +8,12 @@ mod scanner;
 mod setup;
 mod ui;
 
+use agent::{needs_attention as needs_agent_attention, sorted_recommendations, ActionPriority};
 use anyhow::Result;
 use app::{App, AppMode};
 use chrono::Local;
 use clap::Parser;
-use config::default_config_path;
+use config::{default_config_path, legacy_config_path};
 use crossterm::{
     event::{Event, KeyCode, KeyModifiers},
     execute,
@@ -28,9 +30,12 @@ use std::{
 use tokio::sync::mpsc::Sender;
 
 #[derive(Parser, Debug)]
-#[command(name = "gitpulse", about = "Monitor all your git repos from one TUI")]
+#[command(
+    name = "agentpulse",
+    about = "Agent-first terminal hub for monitoring local Git repositories"
+)]
 struct Cli {
-    /// Path to config file (default: ~/.config/gitpulse/config.toml)
+    /// Path to config file (default: ~/.config/agentpulse/config.toml)
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
 
@@ -50,7 +55,21 @@ struct Cli {
     #[arg(long, requires = "once")]
     json: bool,
 
-    /// Print a one-line summary and exit (exit 1 if any repos need attention)
+    /// Output a markdown handoff brief for coding agents, then exit
+    #[arg(
+        long,
+        conflicts_with_all = ["once", "json", "summary", "agent_json"]
+    )]
+    agent_brief: bool,
+
+    /// Output structured JSON with recommendations for coding agents, then exit
+    #[arg(
+        long,
+        conflicts_with_all = ["once", "json", "summary", "agent_brief"]
+    )]
+    agent_json: bool,
+
+    /// Print a one-line summary and exit (exit 1 if any repos are actionable)
     #[arg(long)]
     summary: bool,
 }
@@ -65,13 +84,13 @@ async fn main() -> Result<()> {
     let config_path = cli.config.as_ref();
     let is_first_run = config_path
         .map(|p| !p.exists())
-        .unwrap_or_else(|| !default_config_path().exists());
+        .unwrap_or_else(|| !default_config_path().exists() && !legacy_config_path().exists());
 
     // Run setup wizard if this is the first run or the user explicitly asked for it
     let mut cfg = if cli.setup || is_first_run {
         if is_first_run && !cli.setup {
             println!();
-            println!("  Welcome to GitPulse!");
+            println!("  Welcome to AgentPulse!");
             println!("  No config found — let's pick which directories to scan.");
         }
         let existing = config::load_config(config_path).ok();
@@ -88,24 +107,32 @@ async fn main() -> Result<()> {
     if cli.summary {
         let repos = monitor::scan_all(&cfg, &mut StatusCache::new()).await;
         let total = repos.len();
-        let dirty = repos.iter().filter(|r| r.needs_attention()).count();
+        let actionable = repos.iter().filter(|r| needs_agent_attention(r)).count();
+        let dirty = repos
+            .iter()
+            .filter(|r| r.status.uncommitted_count > 0)
+            .count();
         let unpushed = repos.iter().filter(|r| r.status.unpushed_count > 0).count();
         println!(
-            "gitpulse: {} repos | {} dirty | {} unpushed",
-            total, dirty, unpushed
+            "agentpulse: {} repos | {} actionable | {} dirty | {} unpushed",
+            total, actionable, dirty, unpushed
         );
-        std::process::exit(if dirty > 0 { 1 } else { 0 });
+        std::process::exit(if actionable > 0 { 1 } else { 0 });
     }
 
-    if cli.once {
+    if cli.once || cli.agent_brief || cli.agent_json {
         let repos = monitor::scan_all(&cfg, &mut StatusCache::new()).await;
-        if cli.json {
+        if cli.agent_brief {
+            print_agent_brief(&repos);
+        } else if cli.agent_json {
+            print_agent_json(&repos);
+        } else if cli.json {
             print_json(&repos);
         } else {
             print_table(&repos);
         }
-        let any_dirty = repos.iter().any(|r| r.needs_attention());
-        std::process::exit(if any_dirty { 1 } else { 0 });
+        let any_actionable = repos.iter().any(needs_agent_attention);
+        std::process::exit(if any_actionable { 1 } else { 0 });
     }
 
     // In --setup-only mode, stop after writing the config (no TUI)
@@ -320,6 +347,15 @@ fn handle_key(
                 app.group_by_dir = !app.group_by_dir;
                 app.clamp_selection();
             }
+            KeyCode::Char('a') => {
+                app.agent_focus_mode = !app.agent_focus_mode;
+                app.clamp_selection();
+                if app.agent_focus_mode {
+                    app.notify("Agent focus: showing actionable repos");
+                } else {
+                    app.notify("Agent focus: showing all repos");
+                }
+            }
             KeyCode::Enter => {
                 if let Some(repo) = app.selected_repo() {
                     let path = repo.path.clone();
@@ -427,17 +463,25 @@ fn print_table(repos: &[Repo]) {
         .max()
         .unwrap_or(6)
         .max(6);
+    let next_w = repos
+        .iter()
+        .map(|r| agent::recommend(r).short_action.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
 
     println!(
-        "{:<nw$}  {:<bw$}  {:>11}  {:>5}  STATUS",
+        "{:<nw$}  {:<bw$}  {:>11}  {:>7}  {:<aw$}  STATUS",
         "NAME",
         "BRANCH",
         "UNCOMMITTED",
-        "AHEAD",
+        "SYNC",
+        "NEXT",
         nw = name_w,
         bw = branch_w,
+        aw = next_w,
     );
-    println!("{}", "─".repeat(name_w + branch_w + 34));
+    println!("{}", "─".repeat(name_w + branch_w + next_w + 41));
 
     for repo in repos {
         let (indicator, status_label) = match repo.status_color() {
@@ -454,26 +498,35 @@ fn print_table(repos: &[Repo]) {
             "—".to_string()
         };
 
-        let ahead = if repo.status.has_remote {
-            if repo.status.unpushed_count > 0 {
-                format!("{}↑", repo.status.unpushed_count)
-            } else {
-                "—".to_string()
-            }
-        } else {
+        let sync = if !repo.status.has_remote {
             "n/a".to_string()
+        } else {
+            match (repo.status.unpushed_count, repo.status.behind_count) {
+                (0, 0) => "—".to_string(),
+                (a, 0) => format!("↑{}", a),
+                (0, b) => format!("↓{}", b),
+                (a, b) => format!("↑{}↓{}", a, b),
+            }
+        };
+        let rec = agent::recommend(repo);
+        let next = if rec.short_action == "noop" {
+            "—"
+        } else {
+            rec.short_action
         };
 
         println!(
-            "{} {:<nw$}  {:<bw$}  {:>11}  {:>5}  {}",
+            "{} {:<nw$}  {:<bw$}  {:>11}  {:>7}  {:<aw$}  {}",
             indicator,
             repo.name,
             repo.status.branch,
             uncommitted,
-            ahead,
+            sync,
+            next,
             status_label,
             nw = name_w.saturating_sub(2),
             bw = branch_w,
+            aw = next_w,
         );
     }
 }
@@ -498,4 +551,108 @@ fn print_json(repos: &[Repo]) {
         );
     }
     println!("]");
+}
+
+fn print_agent_brief(repos: &[Repo]) {
+    println!("# AgentPulse Brief");
+    println!();
+    println!("- Generated: {}", Local::now().to_rfc3339());
+    println!("- Repositories scanned: {}", repos.len());
+
+    let recommendations = sorted_recommendations(repos);
+    let critical = recommendations
+        .iter()
+        .filter(|(_, r)| r.priority == ActionPriority::Critical)
+        .count();
+    let high = recommendations
+        .iter()
+        .filter(|(_, r)| r.priority == ActionPriority::High)
+        .count();
+    let medium = recommendations
+        .iter()
+        .filter(|(_, r)| r.priority == ActionPriority::Medium)
+        .count();
+    let low = recommendations
+        .iter()
+        .filter(|(_, r)| r.priority == ActionPriority::Low)
+        .count();
+    let actionable = recommendations
+        .iter()
+        .filter(|(_, r)| r.priority != ActionPriority::Idle)
+        .count();
+
+    println!("- Actionable repos: {}", actionable);
+    println!(
+        "- Priority mix: {} critical, {} high, {} medium, {} low",
+        critical, high, medium, low
+    );
+    println!();
+    println!("## Priority Queue");
+    println!();
+
+    let mut rank = 1usize;
+    for (repo, rec) in recommendations
+        .iter()
+        .filter(|(_, r)| r.priority != ActionPriority::Idle)
+    {
+        println!(
+            "{}. {} (`{}`) [{}]",
+            rank,
+            repo.name,
+            repo.status.branch,
+            rec.priority.label()
+        );
+        println!("   path: `{}`", repo.path.display());
+        println!("   reason: {}", rec.reason);
+        println!("   next: {}", rec.action);
+        println!("   run: `{}`", rec.command);
+        println!();
+        rank += 1;
+    }
+
+    if actionable == 0 {
+        println!("All repositories are clean and synced.");
+    }
+}
+
+fn print_agent_json(repos: &[Repo]) {
+    let recommendations = sorted_recommendations(repos);
+    let actionable = recommendations
+        .iter()
+        .filter(|(_, r)| r.priority != ActionPriority::Idle)
+        .count();
+
+    println!("{{");
+    println!("  \"tool\": \"agentpulse\",");
+    println!("  \"generated_at\": {:?},", Local::now().to_rfc3339());
+    println!("  \"total_repos\": {},", repos.len());
+    println!("  \"actionable_repos\": {},", actionable);
+    println!("  \"repos\": [");
+
+    let last = recommendations.len().saturating_sub(1);
+    for (i, (repo, rec)) in recommendations.iter().enumerate() {
+        let comma = if i < last { "," } else { "" };
+        println!(
+            "    {{\"name\":{:?},\"path\":{:?},\"branch\":{:?},\"priority\":{:?},\"action\":{:?},\"short_action\":{:?},\"reason\":{:?},\"command\":{:?},\"uncommitted\":{},\"unpushed\":{},\"behind\":{},\"stash\":{},\"has_remote\":{},\"detached\":{},\"actionable\":{}}}{}",
+            repo.name,
+            repo.path.to_string_lossy(),
+            repo.status.branch,
+            rec.priority.label(),
+            rec.action,
+            rec.short_action,
+            rec.reason,
+            rec.command,
+            repo.status.uncommitted_count,
+            repo.status.unpushed_count,
+            repo.status.behind_count,
+            repo.status.stash_count,
+            repo.status.has_remote,
+            repo.status.is_detached,
+            rec.priority != ActionPriority::Idle,
+            comma
+        );
+    }
+
+    println!("  ]");
+    println!("}}");
 }

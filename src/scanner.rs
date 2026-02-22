@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_finds_repos() {
-        let base = std::env::temp_dir().join("gitpulse_scanner_test");
+        let base = std::env::temp_dir().join("agentpulse_scanner_test");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
 
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_skips_node_modules() {
-        let base = std::env::temp_dir().join("gitpulse_skip_test");
+        let base = std::env::temp_dir().join("agentpulse_skip_test");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
 

@@ -1,3 +1,4 @@
+use crate::agent;
 use crate::app::App;
 use crate::git::{Repo, StatusColor};
 use ratatui::{
@@ -61,7 +62,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
     if filtered.is_empty() {
         let msg = if app.filter_text.is_empty() {
-            "No repositories found — run `gitpulse --setup` to configure watch directories"
+            "No repositories found — run `agentpulse --setup` to configure watch directories"
                 .to_string()
         } else {
             format!("No repos matching \"{}\"", app.filter_text)
@@ -85,6 +86,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from("DIRTY"),
         Cell::from("SYNC"),
         Cell::from("STASH"),
+        Cell::from("NEXT"),
     ])
     .style(
         Style::default()
@@ -99,6 +101,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
             Entry::Group(name) => Row::new(vec![
                 Cell::from(""),
                 Cell::from(format!(" {}", name)),
+                Cell::from(""),
                 Cell::from(""),
                 Cell::from(""),
                 Cell::from(""),
@@ -147,6 +150,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
                 } else {
                     String::new()
                 };
+                let rec = agent::recommend(repo);
+                let next = if rec.short_action == "noop" {
+                    "—".to_string()
+                } else {
+                    rec.short_action.to_string()
+                };
 
                 let (branch_text, branch_style) = if repo.status.is_detached {
                     (
@@ -164,6 +173,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
                     Cell::from(dirty),
                     Cell::from(sync),
                     Cell::from(stash).style(Style::default().fg(Color::Magenta)),
+                    Cell::from(next).style(Style::default().fg(Color::Cyan)),
                 ])
             }
         })
@@ -176,14 +186,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(10),
         Constraint::Length(9),
         Constraint::Length(6),
+        Constraint::Length(13),
     ];
 
     let table = Table::new(rows, widths)
         .header(header)
-        .block(
-            Block::bordered()
-                .border_style(Style::default().fg(Color::DarkGray)),
-        )
+        .block(Block::bordered().border_style(Style::default().fg(Color::DarkGray)))
         .row_highlight_style(
             Style::default()
                 .add_modifier(Modifier::REVERSED)

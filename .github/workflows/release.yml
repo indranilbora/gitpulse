@@ -18,21 +18,21 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
-            asset_name: gitpulse-macos-arm64
+            asset_name: agentpulse-macos-arm64
           - target: x86_64-apple-darwin
             os: macos-latest
-            asset_name: gitpulse-macos-x86_64
+            asset_name: agentpulse-macos-x86_64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            asset_name: gitpulse-linux-x86_64
+            asset_name: agentpulse-linux-x86_64
             use_cross: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            asset_name: gitpulse-linux-arm64
+            asset_name: agentpulse-linux-arm64
             use_cross: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            asset_name: gitpulse-windows-x86_64.exe
+            asset_name: agentpulse-windows-x86_64.exe
 
     steps:
       - name: Checkout
@@ -58,12 +58,12 @@ jobs:
       - name: Rename binary (Unix)
         if: matrix.os != 'windows-latest'
         run: |
-          cp target/${{ matrix.target }}/release/gitpulse ${{ matrix.asset_name }}
+          cp target/${{ matrix.target }}/release/agentpulse ${{ matrix.asset_name }}
 
       - name: Rename binary (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          Copy-Item "target\${{ matrix.target }}\release\gitpulse.exe" "${{ matrix.asset_name }}"
+          Copy-Item "target\${{ matrix.target }}\release\agentpulse.exe" "${{ matrix.asset_name }}"
 
       - name: Generate SHA256 checksum (Unix)
         if: matrix.os != 'windows-latest'

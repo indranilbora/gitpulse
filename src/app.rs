@@ -1,3 +1,4 @@
+use crate::agent;
 use crate::config::Config;
 use crate::git::Repo;
 use chrono::{DateTime, Local};
@@ -25,6 +26,8 @@ pub struct App {
     pub should_reconfigure: bool,
     /// Show repos grouped by parent directory (toggled with `g`).
     pub group_by_dir: bool,
+    /// Show only repos with non-idle agent recommendations (toggled with `a`).
+    pub agent_focus_mode: bool,
     /// Transient status message (e.g. pull/push result). Clears after 4 s.
     pub notification: Option<(String, Instant)>,
 }
@@ -43,6 +46,7 @@ impl App {
             should_quit: false,
             should_reconfigure: false,
             group_by_dir: false,
+            agent_focus_mode: false,
             notification: None,
         }
     }
@@ -54,6 +58,7 @@ impl App {
             .repos
             .iter()
             .filter(|r| self.config.show_clean || r.needs_attention())
+            .filter(|r| !self.agent_focus_mode || agent::needs_attention(r))
             .filter(|r| {
                 if self.filter_text.is_empty() {
                     return true;

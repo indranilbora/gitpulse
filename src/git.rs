@@ -181,7 +181,7 @@ mod tests {
     use std::process::Command as StdCommand;
 
     fn init_test_repo(name: &str) -> PathBuf {
-        let base = std::env::temp_dir().join("gitpulse_git_test").join(name);
+        let base = std::env::temp_dir().join("agentpulse_git_test").join(name);
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
         let run = |args: &[&str]| {

@@ -74,7 +74,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) 
             String::new()
         };
         format!(
-            " ↵ open  o finder  r refresh  ·  f fetch  p pull  P push  c commit  ·  g group  / filter  s setup  ? help  q quit{}",
+            " ↵ open  o finder  r refresh  ·  f fetch  p pull  P push  c commit  ·  g group  a agent  / filter  s setup  ? help  q quit{}",
             scanning
         )
     };

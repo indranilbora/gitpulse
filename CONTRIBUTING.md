@@ -21,8 +21,8 @@ cargo run
 Use setup with a custom config path when testing:
 
 ```bash
-cargo run -- --setup --config /tmp/gitpulse-dev.toml
-cargo run -- --config /tmp/gitpulse-dev.toml
+cargo run -- --setup --config /tmp/agentpulse-dev.toml
+cargo run -- --config /tmp/agentpulse-dev.toml
 ```
 
 ## Quality checks
@@ -49,18 +49,12 @@ cargo test
 - Tag `v*` to trigger `.github/workflows/release.yml`
 - Workflow builds platform binaries and publishes to crates.io
 - Ensure `CARGO_REGISTRY_TOKEN` is configured in repository secrets
-- Homebrew tap formula is in `Formula/gitpulse.rb`
-- After tagging a new release, bump `url`, `version`, and `sha256` in `Formula/gitpulse.rb`
-- Recompute Homebrew crate checksum with:
-  ```bash
-  VERSION=0.1.0
-  cargo package --no-verify --offline
-  shasum -a 256 target/package/gitpulse-${VERSION}.crate
-  ```
+- Homebrew tap formula is in `Formula/agentpulse.rb`
+- Formula currently tracks `HEAD` on `master`
 - After pushing formula updates, verify tap install with:
   ```bash
   brew untap indranilbora/gitpulse || true
   brew tap indranilbora/gitpulse https://github.com/indranilbora/gitpulse
-  brew install --build-from-source gitpulse
-  brew test gitpulse
+  brew install --HEAD agentpulse
+  brew test agentpulse
   ```

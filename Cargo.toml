@@ -1,11 +1,12 @@
 [package]
-name = "gitpulse"
+name = "agentpulse"
 version = "0.1.0"
 edition = "2021"
-description = "Monitor all your git repos from one TUI"
+description = "Agent-first terminal hub for monitoring and driving many local Git repositories"
 license = "MIT"
-keywords = ["git", "tui", "terminal", "developer-tools"]
+keywords = ["git", "tui", "terminal", "agent", "developer-tools"]
 categories = ["command-line-utilities", "development-tools"]
+repository = "https://github.com/indranilbora/gitpulse"
 
 [dependencies]
 ratatui = "0.29"

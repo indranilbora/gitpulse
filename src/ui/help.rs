@@ -21,6 +21,7 @@ pub fn render(frame: &mut Frame, _app: &App) {
         ("P", "Git push to remote"),
         ("c", "Commit all changes"),
         ("g", "Toggle group by directory"),
+        ("a", "Toggle agent-focus mode"),
         ("/", "Filter / search"),
         ("Esc", "Cancel filter / commit"),
         ("s", "Setup — change watch dirs"),

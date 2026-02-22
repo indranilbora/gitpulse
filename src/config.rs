@@ -68,8 +68,17 @@ fn default_show_clean() -> bool {
     true
 }
 
-/// Default config file location: `~/.config/gitpulse/config.toml`.
+/// Default config file location: `~/.config/agentpulse/config.toml`.
 pub fn default_config_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".config")
+        .join("agentpulse")
+        .join("config.toml")
+}
+
+/// Legacy config location used by GitPulse: `~/.config/gitpulse/config.toml`.
+pub fn legacy_config_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_default()
         .join(".config")
@@ -79,7 +88,21 @@ pub fn default_config_path() -> PathBuf {
 
 /// Load config, creating a default file on first run if none exists.
 pub fn load_config(config_path: Option<&PathBuf>) -> Result<Config> {
-    let path = config_path.cloned().unwrap_or_else(default_config_path);
+    let path = if let Some(path) = config_path {
+        path.clone()
+    } else {
+        let preferred = default_config_path();
+        if preferred.exists() {
+            preferred
+        } else {
+            let legacy = legacy_config_path();
+            if legacy.exists() {
+                legacy
+            } else {
+                preferred
+            }
+        }
+    };
 
     if !path.exists() {
         // First run: write a default config with explanatory comments.
@@ -135,8 +158,8 @@ fn expand_home(path: PathBuf, home: &Path) -> PathBuf {
 }
 
 fn default_config_toml() -> &'static str {
-    r#"# GitPulse configuration
-# ~/.config/gitpulse/config.toml
+    r#"# AgentPulse configuration
+# ~/.config/agentpulse/config.toml
 
 # Directories to scan recursively for git repositories.
 # Supports ~ and $HOME expansion.
@@ -188,7 +211,7 @@ mod tests {
     #[test]
     fn test_load_config_partial_toml() {
         use std::io::Write;
-        let dir = std::env::temp_dir().join("gitpulse_test_config");
+        let dir = std::env::temp_dir().join("agentpulse_test_config");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
         let mut f = std::fs::File::create(&path).unwrap();
@@ -216,7 +239,7 @@ mod tests {
     #[test]
     fn test_missing_dir_recorded() {
         use std::io::Write;
-        let dir = std::env::temp_dir().join("gitpulse_test_missing");
+        let dir = std::env::temp_dir().join("agentpulse_test_missing");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
         let mut f = std::fs::File::create(&path).unwrap();

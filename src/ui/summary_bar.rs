@@ -1,3 +1,4 @@
+use crate::agent;
 use crate::app::App;
 use chrono::Local;
 use ratatui::{
@@ -20,6 +21,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .filter(|r| r.status.unpushed_count > 0)
         .count();
+    let actionable = app
+        .repos
+        .iter()
+        .filter(|r| agent::needs_attention(r))
+        .count();
 
     let scan_info = if app.is_scanning {
         "Scanning…".to_string()
@@ -39,10 +45,15 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         String::new()
     };
+    let agent_hint = if app.agent_focus_mode {
+        "  │  agent-focus: on"
+    } else {
+        ""
+    };
 
     let status_line = format!(
-        " {} repos  │  {} dirty  │  {} unpushed  │  {}{}",
-        total, dirty, unpushed, scan_info, filter_hint
+        " {} repos  │  {} actionable  │  {} dirty  │  {} unpushed  │  {}{}{}",
+        total, actionable, dirty, unpushed, scan_info, filter_hint, agent_hint
     );
 
     let filtered_count = app.filtered_repos().len();
@@ -74,7 +85,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let para = Paragraph::new(lines)
         .block(
             Block::bordered()
-                .title(" GitPulse ")
+                .title(" AgentPulse ")
                 .border_style(Style::default().fg(Color::Cyan)),
         )
         .style(Style::default().fg(Color::White));
