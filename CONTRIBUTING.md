@@ -53,8 +53,8 @@ cargo test
 - Formula currently tracks `HEAD` on `master`
 - After pushing formula updates, verify tap install with:
   ```bash
-  brew untap indranilbora/gitpulse || true
-  brew tap indranilbora/gitpulse https://github.com/indranilbora/gitpulse
-  brew install --HEAD agentpulse
-  brew test agentpulse
+  brew untap indranilbora/agentpulse || true
+  brew tap indranilbora/agentpulse https://github.com/indranilbora/agentpulse
+  brew install --HEAD indranilbora/agentpulse/agentpulse
+  brew test indranilbora/agentpulse/agentpulse
   ```

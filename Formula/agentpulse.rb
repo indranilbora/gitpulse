@@ -1,8 +1,8 @@
 class Agentpulse < Formula
   desc "Agent-first terminal hub for monitoring local Git repositories"
-  homepage "https://github.com/indranilbora/gitpulse"
+  homepage "https://github.com/indranilbora/agentpulse"
   license "MIT"
-  head "https://github.com/indranilbora/gitpulse.git", branch: "master"
+  head "https://github.com/indranilbora/agentpulse.git", branch: "master"
 
   depends_on "git"
   depends_on "rust" => :build

@@ -6,7 +6,7 @@ description = "Agent-first terminal hub for monitoring and driving many local Gi
 license = "MIT"
 keywords = ["git", "tui", "terminal", "agent", "developer-tools"]
 categories = ["command-line-utilities", "development-tools"]
-repository = "https://github.com/indranilbora/gitpulse"
+repository = "https://github.com/indranilbora/agentpulse"
 
 [dependencies]
 ratatui = "0.29"

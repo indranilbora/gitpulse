@@ -17,22 +17,22 @@ AgentPulse is an agent-first terminal hub for managing many local Git repositori
 ### Homebrew
 
 ```bash
-brew tap indranilbora/gitpulse https://github.com/indranilbora/gitpulse
-brew install --HEAD agentpulse
+brew tap indranilbora/agentpulse https://github.com/indranilbora/agentpulse
+brew install --HEAD indranilbora/agentpulse/agentpulse
 ```
 
 Upgrade:
 
 ```bash
 brew update
-brew upgrade --fetch-HEAD agentpulse
+brew upgrade --fetch-HEAD indranilbora/agentpulse/agentpulse
 ```
 
 Uninstall:
 
 ```bash
-brew uninstall agentpulse
-brew untap indranilbora/gitpulse
+brew uninstall indranilbora/agentpulse/agentpulse
+brew untap indranilbora/agentpulse
 ```
 
 ### From source
