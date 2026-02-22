@@ -51,11 +51,11 @@ cargo test
 - Ensure `CARGO_REGISTRY_TOKEN` is configured in repository secrets
 - Homebrew tap formula is in `Formula/gitpulse.rb`
 - After tagging a new release, bump `url`, `version`, and `sha256` in `Formula/gitpulse.rb`
-- Recompute Homebrew source tarball checksum with:
+- Recompute Homebrew crate checksum with:
   ```bash
   VERSION=0.1.0
-  curl -L "https://github.com/indranilbora/gitpulse/archive/refs/tags/v${VERSION}.tar.gz" -o /tmp/gitpulse-v${VERSION}.tar.gz
-  shasum -a 256 /tmp/gitpulse-v${VERSION}.tar.gz
+  cargo package --allow-dirty --no-verify --offline
+  shasum -a 256 target/package/gitpulse-${VERSION}.crate
   ```
 - After pushing formula updates, verify tap install with:
   ```bash
