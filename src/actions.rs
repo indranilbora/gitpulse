@@ -128,3 +128,30 @@ pub fn git_commit(repo_path: &Path, message: &str, notif_tx: Sender<String>) {
         let _ = notif_tx.send(msg).await;
     });
 }
+
+/// Run an arbitrary shell command asynchronously and report the first-line result.
+pub fn run_shell_command(command: &str, notif_tx: Sender<String>) {
+    let cmd = command.to_string();
+    tokio::spawn(async move {
+        let result = tokio::process::Command::new("sh")
+            .args(["-lc", &cmd])
+            .output()
+            .await;
+
+        let msg = match result {
+            Ok(o) if o.status.success() => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let first = stdout.lines().next().unwrap_or("done");
+                format!("✓  action — {}", first)
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                let first = stderr.lines().next().unwrap_or("command failed");
+                format!("✗  action — {}", first)
+            }
+            Err(e) => format!("✗  action — {}", e),
+        };
+
+        let _ = notif_tx.send(msg).await;
+    });
+}

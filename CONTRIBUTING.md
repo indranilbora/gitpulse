@@ -36,11 +36,14 @@ cargo test
 ## Project layout
 
 - `src/main.rs`: CLI entrypoint, event loop, non-interactive output
+- `src/app.rs`: dashboard state, section selection, row selection, action targeting
 - `src/setup.rs`: interactive setup and config writing
 - `src/config.rs`: config schema and loading
 - `src/scanner.rs`: repo discovery
 - `src/git.rs`: status collection via git commands
 - `src/monitor.rs`: scan orchestration + status cache
+- `src/collectors/`: git/worktrees, AI+MCP, processes/deps/env collectors
+- `src/dashboard/`: snapshot model + overview/alert builder
 - `src/ui/`: ratatui rendering components
 - `tests/integration.rs`: end-to-end integration tests against real repos
 

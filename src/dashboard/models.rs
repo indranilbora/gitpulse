@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DashboardSnapshot {
     pub generated_at_epoch_secs: i64,
     pub overview: OverviewMetrics,
@@ -14,28 +14,7 @@ pub struct DashboardSnapshot {
     pub providers: Vec<ProviderUsage>,
 }
 
-impl Default for DashboardSnapshot {
-    fn default() -> Self {
-        Self {
-            generated_at_epoch_secs: 0,
-            overview: OverviewMetrics::default(),
-            alerts: Vec::new(),
-            repos: Vec::new(),
-            worktrees: Vec::new(),
-            processes: Vec::new(),
-            dependencies: Vec::new(),
-            env_audit: Vec::new(),
-            mcp_servers: Vec::new(),
-            providers: Vec::new(),
-        }
-    }
-}
-
 impl DashboardSnapshot {
-    pub fn actionable_alert_count(&self) -> usize {
-        self.alerts.iter().filter(|a| a.action.is_some()).count()
-    }
-
     pub fn total_estimated_cost_usd(&self) -> f64 {
         self.providers
             .iter()
@@ -110,14 +89,6 @@ pub struct DashboardAlert {
     pub title: String,
     pub detail: String,
     pub repo: Option<String>,
-    pub action: Option<ActionCommand>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DashboardRow {
-    pub primary: String,
-    pub secondary: String,
-    pub tertiary: String,
     pub action: Option<ActionCommand>,
 }
 

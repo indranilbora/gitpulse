@@ -8,22 +8,24 @@ use ratatui::{
 };
 
 pub fn render(frame: &mut Frame, _app: &App) {
-    let area = centered_rect(54, 24, frame.area());
+    let area = centered_rect(72, 28, frame.area());
 
     let rows: &[(&str, &str)] = &[
+        ("h/l or Tab", "Switch dashboard section"),
+        ("1..8", "Jump to specific section"),
         ("j / ↓", "Move down"),
         ("k / ↑", "Move up"),
-        ("Enter", "Open in editor"),
-        ("o", "Open in file manager"),
-        ("r", "Force refresh"),
-        ("f", "Git fetch (background)"),
-        ("p", "Git pull from remote"),
-        ("P", "Git push to remote"),
-        ("c", "Commit all changes"),
-        ("g", "Toggle group by directory"),
-        ("a", "Toggle agent-focus mode"),
-        ("/", "Filter / search"),
-        ("Esc", "Cancel filter / commit"),
+        ("x", "Run selected action"),
+        ("r", "Force refresh now"),
+        ("/", "Filter search (Repos section)"),
+        ("Enter", "Open repo in editor (Repos)"),
+        ("o", "Open repo in file manager (Repos)"),
+        ("f", "Git fetch (Repos)"),
+        ("p", "Git pull (Repos)"),
+        ("P", "Git push (Repos)"),
+        ("c", "Commit tracked changes (Repos)"),
+        ("g", "Toggle group by directory (Repos)"),
+        ("A", "Toggle actionable-only repo mode (Repos)"),
         ("s", "Setup — change watch dirs"),
         ("?", "Toggle this help"),
         ("q / Ctrl-C", "Quit"),
@@ -31,7 +33,7 @@ pub fn render(frame: &mut Frame, _app: &App) {
 
     let mut lines: Vec<Line> = vec![
         Line::from(vec![Span::styled(
-            " Keyboard Shortcuts ",
+            " Dashboard Shortcuts ",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -41,7 +43,7 @@ pub fn render(frame: &mut Frame, _app: &App) {
 
     for (key, desc) in rows {
         lines.push(Line::from(vec![
-            Span::styled(format!("  {:<14}", key), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("  {:<16}", key), Style::default().fg(Color::Yellow)),
             Span::raw(*desc),
         ]));
     }

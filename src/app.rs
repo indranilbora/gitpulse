@@ -1,5 +1,6 @@
 use crate::agent;
 use crate::config::Config;
+use crate::dashboard::{ActionCommand, DashboardSection, DashboardSnapshot};
 use crate::git::Repo;
 use chrono::{DateTime, Local};
 use std::time::Instant;
@@ -26,8 +27,12 @@ pub struct App {
     pub should_reconfigure: bool,
     /// Show repos grouped by parent directory (toggled with `g`).
     pub group_by_dir: bool,
-    /// Show only repos with non-idle agent recommendations (toggled with `a`).
+    /// Show only repos with non-idle recommendations (toggled with `A`).
     pub agent_focus_mode: bool,
+    /// Currently focused dashboard section.
+    pub section: DashboardSection,
+    /// Latest collected dashboard snapshot (repos + processes + deps + env + MCP + AI).
+    pub dashboard: DashboardSnapshot,
     /// Transient status message (e.g. pull/push result). Clears after 4 s.
     pub notification: Option<(String, Instant)>,
 }
@@ -47,6 +52,8 @@ impl App {
             should_reconfigure: false,
             group_by_dir: false,
             agent_focus_mode: false,
+            section: DashboardSection::Home,
+            dashboard: DashboardSnapshot::default(),
             notification: None,
         }
     }
@@ -89,8 +96,21 @@ impl App {
         repos
     }
 
+    pub fn active_row_count(&self) -> usize {
+        match self.section {
+            DashboardSection::Home => self.dashboard.alerts.len(),
+            DashboardSection::Repos => self.filtered_repos().len(),
+            DashboardSection::Worktrees => self.dashboard.worktrees.len(),
+            DashboardSection::Processes => self.dashboard.processes.len(),
+            DashboardSection::Dependencies => self.dashboard.dependencies.len(),
+            DashboardSection::EnvAudit => self.dashboard.env_audit.len(),
+            DashboardSection::McpHealth => self.dashboard.mcp_servers.len(),
+            DashboardSection::AiCosts => self.dashboard.providers.len(),
+        }
+    }
+
     pub fn move_selection(&mut self, delta: i32) {
-        let len = self.filtered_repos().len();
+        let len = self.active_row_count();
         if len == 0 {
             return;
         }
@@ -98,7 +118,7 @@ impl App {
     }
 
     pub fn clamp_selection(&mut self) {
-        let len = self.filtered_repos().len();
+        let len = self.active_row_count();
         if len == 0 {
             self.selected = 0;
         } else if self.selected >= len {
@@ -108,6 +128,75 @@ impl App {
 
     pub fn selected_repo(&self) -> Option<&Repo> {
         self.filtered_repos().into_iter().nth(self.selected)
+    }
+
+    pub fn selected_action(&self) -> Option<ActionCommand> {
+        match self.section {
+            DashboardSection::Home => self
+                .dashboard
+                .alerts
+                .get(self.selected)
+                .and_then(|a| a.action.clone()),
+            DashboardSection::Repos => self.selected_repo().and_then(|repo| {
+                let rec = agent::recommend(repo);
+                if rec.short_action == "noop" {
+                    None
+                } else {
+                    Some(ActionCommand {
+                        label: rec.action.to_string(),
+                        command: rec.command,
+                    })
+                }
+            }),
+            DashboardSection::Worktrees => self
+                .dashboard
+                .worktrees
+                .get(self.selected)
+                .and_then(|r| r.action.clone()),
+            DashboardSection::Processes => self
+                .dashboard
+                .processes
+                .get(self.selected)
+                .and_then(|r| r.action.clone()),
+            DashboardSection::Dependencies => self
+                .dashboard
+                .dependencies
+                .get(self.selected)
+                .and_then(|r| r.action.clone()),
+            DashboardSection::EnvAudit => self
+                .dashboard
+                .env_audit
+                .get(self.selected)
+                .and_then(|r| r.action.clone()),
+            DashboardSection::McpHealth => self
+                .dashboard
+                .mcp_servers
+                .get(self.selected)
+                .and_then(|r| r.action.clone()),
+            DashboardSection::AiCosts => None,
+        }
+    }
+
+    pub fn next_section(&mut self) {
+        let all = DashboardSection::all();
+        let idx = all
+            .iter()
+            .position(|s| *s == self.section)
+            .unwrap_or(0)
+            .saturating_add(1)
+            % all.len();
+        self.section = all[idx];
+        self.selected = 0;
+        self.clamp_selection();
+    }
+
+    pub fn previous_section(&mut self) {
+        let all = DashboardSection::all();
+        let idx = all.iter().position(|s| *s == self.section).unwrap_or(0);
+        let next_idx = if idx == 0 { all.len() - 1 } else { idx - 1 };
+        self.section = all[next_idx];
+        self.selected = 0;
+        self.clamp_selection();
     }
 
     /// Set a transient notification message (shown in the status bar for 4 s).

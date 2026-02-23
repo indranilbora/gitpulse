@@ -1,16 +1,17 @@
 # AgentPulse
 
-AgentPulse is an agent-first terminal hub for managing many local Git repositories while vibe coding.
+AgentPulse is a real-time terminal dashboard for your local development environment.
 
-## Why AgentPulse
+## What It Monitors
 
-- Rebranded from `gitpulse` to avoid naming collisions and focus on agent workflows
-- Built-in recommendation engine with per-repo `NEXT` action in TUI
-- Agent-focused output modes:
-  - `--agent-brief`: markdown handoff for terminal agents
-  - `--agent-json`: structured action queue for automation
-- `a` key toggles Agent Focus mode to show only actionable repos
-- Existing fast repo monitoring and Git actions remain intact
+- Git repo health: dirty/ahead/behind, detached state, stash, and recommended next actions
+- Git worktrees across scanned repos
+- Repo-scoped running processes
+- Dependency hygiene across Node, Rust, Python, Go, and Ruby projects
+- `.env` audit (metadata only): missing/extra keys and tracked sensitive env files
+- MCP server configuration + command health checks
+- AI provider setup/usage/cost rollups for Claude, Gemini, and OpenAI (from local config/log hints)
+- Unified alerts with executable actions (`x` runs the selected action)
 
 ## Installation
 
@@ -59,6 +60,7 @@ agentpulse
 # one-shot table / JSON
 agentpulse --once
 agentpulse --once --json
+agentpulse --dashboard-json
 
 # agent-optimized exports
 agentpulse --agent-brief
@@ -75,20 +77,24 @@ agentpulse --agent-json
 - `--summary`: one-line summary (`exit 1` when actionable repos exist)
 - `--agent-brief`: markdown handoff with prioritized recommendations
 - `--agent-json`: structured recommendation queue for tools/agents
+- `--dashboard-json`: full snapshot including repos, processes, deps, env audit, MCP, and AI usage/cost
 
 ## Keyboard shortcuts
 
-- `j` / `k` or arrows: move selection
-- `Enter`: open repo in editor
-- `o`: open repo in file manager
+- `h` / `l` or `Tab`: switch dashboard section
+- `1..8`: jump to section
+- `j` / `k` or arrows: move selection in current section
+- `x`: run selected row action
+- `Enter`: open repo in editor (Repos section)
+- `o`: open repo in file manager (Repos section)
 - `r`: refresh now
-- `f`: git fetch
-- `p`: git pull
-- `P`: git push
-- `c`: commit tracked changes (`git commit -a -m`)
-- `g`: toggle group by directory
-- `a`: toggle Agent Focus mode (actionable repos only)
-- `/`: filter/search
+- `f`: git fetch (Repos section)
+- `p`: git pull (Repos section)
+- `P`: git push (Repos section)
+- `c`: commit tracked changes (Repos section)
+- `g`: toggle group by directory (Repos section)
+- `A`: toggle actionable-only repo mode (Repos section)
+- `/`: filter/search (Repos section)
 - `s`: rerun setup wizard
 - `?`: show help
 - `q`: quit
@@ -111,7 +117,7 @@ Example:
 
 ```toml
 watch_directories = ["~/Developer", "~/Projects", "~/repos"]
-refresh_interval_secs = 60
+refresh_interval_secs = 10
 max_scan_depth = 3
 editor = "code"
 show_clean = true

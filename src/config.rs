@@ -57,7 +57,7 @@ pub fn default_directories() -> Vec<PathBuf> {
 }
 
 fn default_refresh() -> u64 {
-    60
+    10
 }
 
 fn default_depth() -> usize {
@@ -170,7 +170,7 @@ watch_directories = [
 ]
 
 # How often to auto-refresh status (seconds).
-refresh_interval_secs = 60
+refresh_interval_secs = 10
 
 # Maximum directory depth to recurse when looking for .git folders.
 max_scan_depth = 3
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let cfg = Config::default();
-        assert_eq!(cfg.refresh_interval_secs, 60);
+        assert_eq!(cfg.refresh_interval_secs, 10);
         assert_eq!(cfg.max_scan_depth, 3);
         assert!(cfg.show_clean);
         assert!(cfg.editor.is_none());
@@ -205,7 +205,7 @@ mod tests {
     fn test_load_config_missing_file() {
         let path = PathBuf::from("/nonexistent/path/config.toml");
         let cfg = load_config(Some(&path)).unwrap();
-        assert_eq!(cfg.refresh_interval_secs, 60);
+        assert_eq!(cfg.refresh_interval_secs, 10);
     }
 
     #[test]

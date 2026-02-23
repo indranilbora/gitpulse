@@ -1,7 +1,9 @@
 mod actions;
 mod agent;
 mod app;
+mod collectors;
 mod config;
+mod dashboard;
 mod git;
 mod monitor;
 mod scanner;
@@ -65,9 +67,16 @@ struct Cli {
     /// Output structured JSON with recommendations for coding agents, then exit
     #[arg(
         long,
-        conflicts_with_all = ["once", "json", "summary", "agent_brief"]
+        conflicts_with_all = ["once", "json", "summary", "agent_brief", "dashboard_json"]
     )]
     agent_json: bool,
+
+    /// Output full dashboard snapshot JSON (repos, processes, deps, env, MCP, AI), then exit
+    #[arg(
+        long,
+        conflicts_with_all = ["json", "summary", "agent_brief", "agent_json"]
+    )]
+    dashboard_json: bool,
 
     /// Print a one-line summary and exit (exit 1 if any repos are actionable)
     #[arg(long)]
@@ -106,6 +115,7 @@ async fn main() -> Result<()> {
 
     if cli.summary {
         let repos = monitor::scan_all(&cfg, &mut StatusCache::new()).await;
+        let snapshot = dashboard::collect_and_build(&repos);
         let total = repos.len();
         let actionable = repos.iter().filter(|r| needs_agent_attention(r)).count();
         let dirty = repos
@@ -114,18 +124,28 @@ async fn main() -> Result<()> {
             .count();
         let unpushed = repos.iter().filter(|r| r.status.unpushed_count > 0).count();
         println!(
-            "agentpulse: {} repos | {} actionable | {} dirty | {} unpushed",
-            total, actionable, dirty, unpushed
+            "agentpulse: {} repos | {} actionable | {} dirty | {} unpushed | {} proc | {} dep-issues | {} env-issues | ${:.2} est",
+            total,
+            actionable,
+            dirty,
+            unpushed,
+            snapshot.overview.repo_processes,
+            snapshot.overview.dep_issues,
+            snapshot.overview.env_issues,
+            snapshot.total_estimated_cost_usd(),
         );
         std::process::exit(if actionable > 0 { 1 } else { 0 });
     }
 
-    if cli.once || cli.agent_brief || cli.agent_json {
+    if cli.once || cli.agent_brief || cli.agent_json || cli.dashboard_json {
         let repos = monitor::scan_all(&cfg, &mut StatusCache::new()).await;
         if cli.agent_brief {
             print_agent_brief(&repos);
         } else if cli.agent_json {
             print_agent_json(&repos);
+        } else if cli.dashboard_json {
+            let snapshot = dashboard::collect_and_build(&repos);
+            println!("{}", serde_json::to_string_pretty(&snapshot)?);
         } else if cli.json {
             print_json(&repos);
         } else {
@@ -202,6 +222,7 @@ async fn event_loop(
     let mut app = App::new(config.clone());
     let (scan_tx, mut scan_rx) = tokio::sync::mpsc::channel::<Vec<Repo>>(1);
     let (cache_tx, mut cache_rx) = tokio::sync::mpsc::channel::<StatusCache>(1);
+    let (dash_tx, mut dash_rx) = tokio::sync::mpsc::channel::<dashboard::DashboardSnapshot>(1);
     let (notif_tx, mut notif_rx) = tokio::sync::mpsc::channel::<String>(8);
 
     // SIGTERM: restore terminal cleanly
@@ -225,6 +246,7 @@ async fn event_loop(
         scan_tx.clone(),
         current_cache.clone(),
         cache_tx.clone(),
+        dash_tx.clone(),
     );
 
     let mut last_refresh = Instant::now();
@@ -239,6 +261,10 @@ async fn event_loop(
 
         if let Ok(updated) = cache_rx.try_recv() {
             current_cache = updated;
+        }
+        if let Ok(snapshot) = dash_rx.try_recv() {
+            app.dashboard = snapshot;
+            app.clamp_selection();
         }
 
         if let Ok(repos) = scan_rx.try_recv() {
@@ -262,6 +288,7 @@ async fn event_loop(
                     &scan_tx,
                     &cache_tx,
                     &mut current_cache,
+                    &dash_tx,
                     &notif_tx,
                 ),
                 Event::Resize(_, _) => {}
@@ -277,6 +304,7 @@ async fn event_loop(
                     scan_tx.clone(),
                     current_cache.clone(),
                     cache_tx.clone(),
+                    dash_tx.clone(),
                 );
                 app.is_scanning = true;
                 last_refresh = Instant::now();
@@ -296,12 +324,15 @@ fn trigger_scan(
     tx: Sender<Vec<Repo>>,
     cache: StatusCache,
     cache_tx: tokio::sync::mpsc::Sender<StatusCache>,
+    dash_tx: tokio::sync::mpsc::Sender<dashboard::DashboardSnapshot>,
 ) {
     tokio::spawn(async move {
         let mut cache = cache;
         let repos = monitor::scan_all(&config, &mut cache).await;
+        let snapshot = dashboard::collect_and_build(&repos);
         let _ = cache_tx.send(cache).await;
         let _ = tx.send(repos).await;
+        let _ = dash_tx.send(snapshot).await;
     });
 }
 
@@ -312,6 +343,7 @@ fn handle_key(
     scan_tx: &Sender<Vec<Repo>>,
     cache_tx: &tokio::sync::mpsc::Sender<StatusCache>,
     current_cache: &mut StatusCache,
+    dash_tx: &tokio::sync::mpsc::Sender<dashboard::DashboardSnapshot>,
     notif_tx: &tokio::sync::mpsc::Sender<String>,
 ) {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
@@ -328,26 +360,65 @@ fn handle_key(
             }
             KeyCode::Char('j') | KeyCode::Down => app.move_selection(1),
             KeyCode::Char('k') | KeyCode::Up => app.move_selection(-1),
+            KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => app.previous_section(),
+            KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => app.next_section(),
+            KeyCode::Char('1') => {
+                app.section = dashboard::DashboardSection::Home;
+                app.selected = 0;
+            }
+            KeyCode::Char('2') => {
+                app.section = dashboard::DashboardSection::Repos;
+                app.selected = 0;
+            }
+            KeyCode::Char('3') => {
+                app.section = dashboard::DashboardSection::Worktrees;
+                app.selected = 0;
+            }
+            KeyCode::Char('4') => {
+                app.section = dashboard::DashboardSection::Processes;
+                app.selected = 0;
+            }
+            KeyCode::Char('5') => {
+                app.section = dashboard::DashboardSection::Dependencies;
+                app.selected = 0;
+            }
+            KeyCode::Char('6') => {
+                app.section = dashboard::DashboardSection::EnvAudit;
+                app.selected = 0;
+            }
+            KeyCode::Char('7') => {
+                app.section = dashboard::DashboardSection::McpHealth;
+                app.selected = 0;
+            }
+            KeyCode::Char('8') => {
+                app.section = dashboard::DashboardSection::AiCosts;
+                app.selected = 0;
+            }
             KeyCode::Char('r') => {
                 trigger_scan(
                     app.config.clone(),
                     scan_tx.clone(),
                     current_cache.clone(),
                     cache_tx.clone(),
+                    dash_tx.clone(),
                 );
                 app.is_scanning = true;
             }
             KeyCode::Char('/') => {
-                app.filter_text.clear();
-                app.selected = 0;
-                app.mode = AppMode::Search;
+                if app.section == dashboard::DashboardSection::Repos {
+                    app.filter_text.clear();
+                    app.selected = 0;
+                    app.mode = AppMode::Search;
+                } else {
+                    app.notify("Filter is available in Repos section");
+                }
             }
             KeyCode::Char('?') => app.mode = AppMode::Help,
-            KeyCode::Char('g') => {
+            KeyCode::Char('g') if app.section == dashboard::DashboardSection::Repos => {
                 app.group_by_dir = !app.group_by_dir;
                 app.clamp_selection();
             }
-            KeyCode::Char('a') => {
+            KeyCode::Char('A') if app.section == dashboard::DashboardSection::Repos => {
                 app.agent_focus_mode = !app.agent_focus_mode;
                 app.clamp_selection();
                 if app.agent_focus_mode {
@@ -356,7 +427,16 @@ fn handle_key(
                     app.notify("Agent focus: showing all repos");
                 }
             }
-            KeyCode::Enter => {
+            KeyCode::Char('x') | KeyCode::Char('X') => {
+                if let Some(action) = app.selected_action() {
+                    let label = action.label.clone();
+                    actions::run_shell_command(&action.command, notif_tx.clone());
+                    app.notify(format!("Running action: {}", label));
+                } else {
+                    app.notify("No action available on this row");
+                }
+            }
+            KeyCode::Enter if app.section == dashboard::DashboardSection::Repos => {
                 if let Some(repo) = app.selected_repo() {
                     let path = repo.path.clone();
                     let editor = app
@@ -368,33 +448,33 @@ fn handle_key(
                     let _ = actions::open_in_editor(&path, &editor);
                 }
             }
-            KeyCode::Char('o') => {
+            KeyCode::Char('o') if app.section == dashboard::DashboardSection::Repos => {
                 if let Some(repo) = app.selected_repo() {
                     let path = repo.path.clone();
                     let _ = actions::open_in_file_manager(&path);
                 }
             }
-            KeyCode::Char('f') => {
+            KeyCode::Char('f') if app.section == dashboard::DashboardSection::Repos => {
                 if let Some(repo) = app.selected_repo() {
                     let path = repo.path.clone();
                     let _ = actions::git_fetch(&path);
                 }
             }
-            KeyCode::Char('p') => {
+            KeyCode::Char('p') if app.section == dashboard::DashboardSection::Repos => {
                 if let Some(repo) = app.selected_repo() {
                     let path = repo.path.clone();
                     actions::git_pull(&path, notif_tx.clone());
                     app.notify("Pulling…");
                 }
             }
-            KeyCode::Char('P') => {
+            KeyCode::Char('P') if app.section == dashboard::DashboardSection::Repos => {
                 if let Some(repo) = app.selected_repo() {
                     let path = repo.path.clone();
                     actions::git_push(&path, notif_tx.clone());
                     app.notify("Pushing…");
                 }
             }
-            KeyCode::Char('c') => {
+            KeyCode::Char('c') if app.section == dashboard::DashboardSection::Repos => {
                 app.commit_message.clear();
                 app.mode = AppMode::Commit;
             }
