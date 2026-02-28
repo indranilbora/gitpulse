@@ -97,16 +97,7 @@ impl App {
     }
 
     pub fn active_row_count(&self) -> usize {
-        match self.section {
-            DashboardSection::Home => self.dashboard.alerts.len(),
-            DashboardSection::Repos => self.filtered_repos().len(),
-            DashboardSection::Worktrees => self.dashboard.worktrees.len(),
-            DashboardSection::Processes => self.dashboard.processes.len(),
-            DashboardSection::Dependencies => self.dashboard.dependencies.len(),
-            DashboardSection::EnvAudit => self.dashboard.env_audit.len(),
-            DashboardSection::McpHealth => self.dashboard.mcp_servers.len(),
-            DashboardSection::AiCosts => self.dashboard.providers.len(),
-        }
+        self.section_row_count(self.section)
     }
 
     /// Item count for a specific section (used by sidebar badges).

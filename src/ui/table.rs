@@ -100,10 +100,10 @@ fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
     .style(theme::style_header())
     .height(1);
 
+    let mut data_row_idx: usize = 0;
     let rows: Vec<Row> = entries
         .iter()
-        .enumerate()
-        .map(|(i, entry)| match entry {
+        .map(|entry| match entry {
             Entry::Group(name) => Row::new(vec![
                 Cell::from(""),
                 Cell::from(format!(" {}", name)),
@@ -190,11 +190,13 @@ fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
                     Cell::from(next).style(Style::default().fg(rec_color)),
                 ]);
 
-                if i % 2 == 1 {
+                let styled_row = if data_row_idx % 2 == 1 {
                     row.style(theme::style_table_alt_row())
                 } else {
                     row
-                }
+                };
+                data_row_idx += 1;
+                styled_row
             }
         })
         .collect();
