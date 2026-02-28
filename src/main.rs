@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
             .count();
         let unpushed = repos.iter().filter(|r| r.status.unpushed_count > 0).count();
         println!(
-            "agentpulse: {} repos | {} actionable | {} dirty | {} unpushed | {} proc | {} dep-issues | {} env-issues | ${:.2} est",
+            "agentpulse: {} repos | {} actionable | {} dirty | {} unpushed | {} proc | {} dep-issues | {} env-issues | ${:.2} ai cost",
             total,
             actionable,
             dirty,

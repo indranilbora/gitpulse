@@ -1,15 +1,20 @@
 pub mod commit_bar;
 pub mod filter;
 pub mod help;
+pub mod home;
+pub mod sidebar;
 pub mod summary_bar;
 pub mod table;
+pub mod theme;
+pub mod widgets;
 
 use crate::app::{App, AppMode};
 use crate::dashboard::DashboardSection;
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Color, Modifier, Style},
-    widgets::{Block, List, ListItem, ListState, Paragraph},
+    style::Style,
+    text::{Line, Span},
+    widgets::Paragraph,
     Frame,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -32,7 +37,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(msg)
                 .alignment(ratatui::layout::Alignment::Center)
-                .style(Style::default().fg(Color::Yellow)),
+                .style(Style::default().fg(theme::ACCENT_YELLOW)),
             area,
         );
         return;
@@ -40,7 +45,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     let chunks = Layout::vertical([
         Constraint::Length(3), // summary
-        Constraint::Fill(1),   // sidebar + section content
+        Constraint::Fill(1),  // sidebar + section content
         Constraint::Length(1), // status / filter / commit
     ])
     .split(frame.area());
@@ -48,8 +53,14 @@ pub fn render(frame: &mut Frame, app: &App) {
     let body = Layout::horizontal([Constraint::Length(24), Constraint::Fill(1)]).split(chunks[1]);
 
     summary_bar::render(frame, app, chunks[0]);
-    render_sidebar(frame, app, body[0]);
-    table::render(frame, app, body[1]);
+    sidebar::render(frame, app, body[0]);
+
+    // Route Home to home::render, everything else to table::render
+    if app.section == DashboardSection::Home {
+        home::render(frame, app, body[1]);
+    } else {
+        table::render(frame, app, body[1]);
+    }
 
     match app.mode {
         AppMode::Search => filter::render(frame, app, chunks[2]),
@@ -62,74 +73,69 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 }
 
-fn render_sidebar(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    let all = DashboardSection::all();
-    let items: Vec<ListItem> = all
-        .iter()
-        .enumerate()
-        .map(|(idx, s)| {
-            ListItem::new(format!(" {}. {}", idx + 1, s.title())).style(Style::default().fg(
-                if *s == app.section {
-                    Color::Cyan
-                } else {
-                    Color::Gray
-                },
-            ))
-        })
-        .collect();
-
-    let mut state = ListState::default();
-    let selected_idx = all.iter().position(|s| *s == app.section).unwrap_or(0);
-    state.select(Some(selected_idx));
-
-    let list = List::new(items)
-        .block(
-            Block::bordered()
-                .title(" Sections ")
-                .border_style(Style::default().fg(Color::DarkGray)),
-        )
-        .highlight_style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .add_modifier(Modifier::REVERSED),
-        );
-
-    frame.render_stateful_widget(list, area, &mut state);
-}
-
 fn render_status_bar(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    // Show transient notification if present, otherwise show key hints
-    let text = if let Some((msg, _)) = &app.notification {
-        format!(" {}", msg)
-    } else {
-        let scanning = if app.is_scanning {
-            let millis = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            let frame = ((millis / 100) as usize) % SPINNER.len();
-            format!("  {} scanning", SPINNER[frame])
-        } else {
-            String::new()
-        };
+    // Show transient notification if present
+    if let Some((msg, _)) = &app.notification {
+        let line = Line::from(vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(msg, Style::default().fg(theme::ACCENT_GREEN)),
+        ]);
+        frame.render_widget(
+            Paragraph::new(line).style(Style::default().bg(theme::BG_SECONDARY)),
+            area,
+        );
+        return;
+    }
 
-        let section_specific = if app.section == DashboardSection::Repos {
-            "  ·  ↵ open  o finder  f fetch  p pull  P push  c commit  g group  A focus"
-        } else {
-            ""
-        };
+    let mut spans: Vec<Span> = vec![Span::raw(" ")];
 
-        format!(
-            " h/l or tab: section  j/k: row  x: run action  r: refresh  /: repo filter  ?: help  q: quit{}{}",
-            section_specific, scanning
-        )
-    };
+    // Core navigation hints
+    let hints: &[(&str, &str)] = &[
+        ("h/l", "section"),
+        ("j/k", "row"),
+        ("x", "action"),
+        ("r", "refresh"),
+        ("/", "filter"),
+        ("?", "help"),
+        ("q", "quit"),
+    ];
 
-    let style = if app.notification.is_some() {
-        Style::default().bg(Color::DarkGray).fg(Color::Green)
-    } else {
-        Style::default().bg(Color::DarkGray).fg(Color::White)
-    };
+    for (key, desc) in hints {
+        spans.extend(widgets::key_hint(key, desc));
+    }
 
-    frame.render_widget(Paragraph::new(text).style(style), area);
+    // Section-specific hints for Repos
+    if app.section == DashboardSection::Repos {
+        spans.push(Span::styled("│ ", Style::default().fg(theme::FG_DIMMED)));
+        let repo_hints: &[(&str, &str)] = &[
+            ("↵", "open"),
+            ("f", "fetch"),
+            ("p", "pull"),
+            ("P", "push"),
+            ("c", "commit"),
+            ("g", "group"),
+        ];
+        for (key, desc) in repo_hints {
+            spans.extend(widgets::key_hint(key, desc));
+        }
+    }
+
+    // Scanning spinner on the right
+    if app.is_scanning {
+        let millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let frame_idx = ((millis / 100) as usize) % SPINNER.len();
+        spans.push(Span::styled(
+            format!(" {} scanning", SPINNER[frame_idx]),
+            Style::default().fg(theme::ACCENT_YELLOW),
+        ));
+    }
+
+    let line = Line::from(spans);
+    frame.render_widget(
+        Paragraph::new(line).style(Style::default().bg(theme::BG_SECONDARY)),
+        area,
+    );
 }

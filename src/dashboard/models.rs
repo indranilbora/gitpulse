@@ -49,6 +49,17 @@ impl DashboardSection {
         ]
     }
 
+    pub fn category(self) -> &'static str {
+        match self {
+            DashboardSection::Home => "OVERVIEW",
+            DashboardSection::Repos | DashboardSection::Worktrees => "WORKSPACE",
+            DashboardSection::Processes
+            | DashboardSection::Dependencies
+            | DashboardSection::EnvAudit => "MONITOR",
+            DashboardSection::McpHealth | DashboardSection::AiCosts => "INTEGRATIONS",
+        }
+    }
+
     pub fn title(self) -> &'static str {
         match self {
             DashboardSection::Home => "Home",
@@ -187,6 +198,18 @@ pub struct ProviderUsage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn section_categories() {
+        assert_eq!(DashboardSection::Home.category(), "OVERVIEW");
+        assert_eq!(DashboardSection::Repos.category(), "WORKSPACE");
+        assert_eq!(DashboardSection::Worktrees.category(), "WORKSPACE");
+        assert_eq!(DashboardSection::Processes.category(), "MONITOR");
+        assert_eq!(DashboardSection::Dependencies.category(), "MONITOR");
+        assert_eq!(DashboardSection::EnvAudit.category(), "MONITOR");
+        assert_eq!(DashboardSection::McpHealth.category(), "INTEGRATIONS");
+        assert_eq!(DashboardSection::AiCosts.category(), "INTEGRATIONS");
+    }
 
     #[test]
     fn total_cost_rolls_up() {

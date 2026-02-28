@@ -1,11 +1,12 @@
+use super::{theme, widgets};
 use crate::agent;
 use crate::app::App;
 use crate::dashboard::DashboardSection;
 use crate::git::{Repo, StatusColor};
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
-    widgets::{Block, Cell, Paragraph, Row, Table, TableState},
+    layout::{Constraint, Rect},
+    style::Style,
+    widgets::{Cell, Row},
     Frame,
 };
 
@@ -60,7 +61,7 @@ fn build_entries<'a>(repos: &[&'a Repo], grouped: bool) -> (Vec<Entry<'a>>, Vec<
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     match app.section {
-        DashboardSection::Home => render_home(frame, app, area),
+        DashboardSection::Home => {} // handled by home.rs
         DashboardSection::Repos => render_repos(frame, app, area),
         DashboardSection::Worktrees => render_worktrees(frame, app, area),
         DashboardSection::Processes => render_processes(frame, app, area),
@@ -69,110 +70,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         DashboardSection::McpHealth => render_mcp(frame, app, area),
         DashboardSection::AiCosts => render_ai_costs(frame, app, area),
     }
-}
-
-fn render_home(frame: &mut Frame, app: &App, area: Rect) {
-    let chunks = Layout::vertical([Constraint::Length(4), Constraint::Fill(1)]).split(area);
-
-    let overview = &app.dashboard.overview;
-    let cost = app.dashboard.total_estimated_cost_usd();
-    let info = [
-        format!(
-            "repos: {}   actionable: {}   dirty: {}   ahead: {}   behind: {}",
-            overview.total_repos,
-            overview.actionable_repos,
-            overview.dirty_repos,
-            overview.repos_ahead,
-            overview.repos_behind
-        ),
-        format!(
-            "worktrees: {}   repo processes: {}   dep issues: {}   env issues: {}   mcp unhealthy: {}   est ai cost: ${:.2}",
-            overview.total_worktrees,
-            overview.repo_processes,
-            overview.dep_issues,
-            overview.env_issues,
-            overview.mcp_unhealthy,
-            cost,
-        ),
-    ]
-    .join("\n");
-
-    frame.render_widget(
-        Paragraph::new(info)
-            .block(Block::bordered().title(" Overview "))
-            .style(Style::default().fg(Color::White)),
-        chunks[0],
-    );
-
-    if app.dashboard.alerts.is_empty() {
-        render_empty(
-            frame,
-            chunks[1],
-            "No alerts. Workspace looks healthy across repos, deps, env, MCP, and AI configs.",
-        );
-        return;
-    }
-
-    let header = Row::new(vec![
-        Cell::from("SEV"),
-        Cell::from("TITLE"),
-        Cell::from("DETAIL"),
-        Cell::from("ACTION"),
-    ])
-    .style(
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    );
-
-    let rows: Vec<Row> = app
-        .dashboard
-        .alerts
-        .iter()
-        .map(|a| {
-            let color = match a.severity.as_str() {
-                "critical" | "high" => Color::Red,
-                "warn" => Color::Yellow,
-                _ => Color::Blue,
-            };
-            Row::new(vec![
-                Cell::from(a.severity.clone()).style(Style::default().fg(color)),
-                Cell::from(a.title.clone()),
-                Cell::from(a.detail.clone()),
-                Cell::from(
-                    a.action
-                        .as_ref()
-                        .map(|x| x.label.clone())
-                        .unwrap_or_else(|| "—".to_string()),
-                )
-                .style(Style::default().fg(Color::Cyan)),
-            ])
-        })
-        .collect();
-
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(8),
-            Constraint::Length(34),
-            Constraint::Fill(1),
-            Constraint::Length(24),
-        ],
-    )
-    .header(header)
-    .block(Block::bordered().title(" Alerts (x to run selected action) "))
-    .row_highlight_style(
-        Style::default()
-            .add_modifier(Modifier::REVERSED)
-            .add_modifier(Modifier::BOLD),
-    );
-
-    let mut state = TableState::default();
-    state.select(Some(
-        app.selected
-            .min(app.dashboard.alerts.len().saturating_sub(1)),
-    ));
-    frame.render_stateful_widget(table, chunks[1], &mut state);
 }
 
 fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
@@ -185,7 +82,7 @@ fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             format!("No repos matching \"{}\"", app.filter_text)
         };
-        render_empty(frame, area, &msg);
+        widgets::render_empty_state(frame, area, "◇", &msg);
         return;
     }
 
@@ -200,16 +97,13 @@ fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from("STASH"),
         Cell::from("NEXT"),
     ])
-    .style(
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    )
+    .style(theme::style_header())
     .height(1);
 
     let rows: Vec<Row> = entries
         .iter()
-        .map(|entry| match entry {
+        .enumerate()
+        .map(|(i, entry)| match entry {
             Entry::Group(name) => Row::new(vec![
                 Cell::from(""),
                 Cell::from(format!(" {}", name)),
@@ -221,17 +115,17 @@ fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
             ])
             .style(
                 Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(theme::ACCENT_PURPLE)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
             ),
 
             Entry::Repo(repo) => {
                 let (indicator, color) = match repo.status_color() {
-                    StatusColor::Clean => ("○", Color::Green),
-                    StatusColor::Uncommitted => ("●", Color::Yellow),
-                    StatusColor::Unpushed => ("●", Color::Blue),
-                    StatusColor::Dirty => ("●", Color::Red),
-                    StatusColor::NoRemote => ("○", Color::DarkGray),
+                    StatusColor::Clean => ("○", theme::ACCENT_GREEN),
+                    StatusColor::Uncommitted => ("●", theme::ACCENT_YELLOW),
+                    StatusColor::Unpushed => ("●", theme::ACCENT_BLUE),
+                    StatusColor::Dirty => ("●", theme::ACCENT_RED),
+                    StatusColor::NoRemote => ("○", theme::FG_DIMMED),
                 };
 
                 let dirty = if repo.status.uncommitted_count > 0 {
@@ -272,21 +166,35 @@ fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
                 let (branch_text, branch_style) = if repo.status.is_detached {
                     (
                         "(detached)".to_string(),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(theme::FG_DIMMED),
                     )
                 } else {
-                    (repo.status.branch.clone(), Style::default())
+                    (repo.status.branch.clone(), Style::default().fg(theme::FG_PRIMARY))
                 };
 
-                Row::new(vec![
+                let rec_color = match rec.short_action {
+                    "commit" | "add+commit" => theme::ACCENT_YELLOW,
+                    "push" => theme::ACCENT_BLUE,
+                    "pull" | "fetch+pull" => theme::ACCENT_CYAN,
+                    "stash-or-commit" => theme::ACCENT_ORANGE,
+                    _ => theme::ACCENT_CYAN,
+                };
+
+                let row = Row::new(vec![
                     Cell::from(indicator).style(Style::default().fg(color)),
-                    Cell::from(repo.name.clone()),
+                    Cell::from(repo.name.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
                     Cell::from(branch_text).style(branch_style),
-                    Cell::from(dirty),
-                    Cell::from(sync),
-                    Cell::from(stash).style(Style::default().fg(Color::Magenta)),
-                    Cell::from(next).style(Style::default().fg(Color::Cyan)),
-                ])
+                    Cell::from(dirty).style(Style::default().fg(theme::FG_PRIMARY)),
+                    Cell::from(sync).style(Style::default().fg(theme::FG_PRIMARY)),
+                    Cell::from(stash).style(Style::default().fg(theme::ACCENT_PINK)),
+                    Cell::from(next).style(Style::default().fg(rec_color)),
+                ]);
+
+                if i % 2 == 1 {
+                    row.style(theme::style_table_alt_row())
+                } else {
+                    row
+                }
             }
         })
         .collect();
@@ -301,27 +209,24 @@ fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(13),
     ];
 
-    let table = Table::new(rows, widths)
+    let title = format!("Repos ({})", filtered.len());
+    let table = ratatui::widgets::Table::new(rows, widths)
         .header(header)
-        .block(Block::bordered().title(" Repos (x to run NEXT action) "))
-        .row_highlight_style(
-            Style::default()
-                .add_modifier(Modifier::REVERSED)
-                .add_modifier(Modifier::BOLD),
-        );
+        .block(theme::block_focused(&title))
+        .row_highlight_style(theme::style_row_highlight());
 
     let len = filtered.len();
     let clamped = app.selected.min(len.saturating_sub(1));
     let visual_selected = repo_to_visual.get(clamped).copied();
 
-    let mut state = TableState::default();
+    let mut state = ratatui::widgets::TableState::default();
     state.select(visual_selected);
     frame.render_stateful_widget(table, area, &mut state);
 }
 
 fn render_worktrees(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.worktrees.is_empty() {
-        render_empty(frame, area, "No worktree data yet.");
+        widgets::render_empty_state(frame, area, "◇", "No worktree data yet.");
         return;
     }
 
@@ -332,43 +237,48 @@ fn render_worktrees(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from("STATE"),
         Cell::from("ACTION"),
     ])
-    .style(
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    );
+    .style(theme::style_header());
 
     let rows: Vec<Row> = app
         .dashboard
         .worktrees
         .iter()
         .map(|r| {
+            let state_text = if r.detached {
+                "detached"
+            } else if r.bare {
+                "bare"
+            } else {
+                "normal"
+            };
+            let state_color = if r.detached {
+                theme::ACCENT_YELLOW
+            } else if r.bare {
+                theme::FG_DIMMED
+            } else {
+                theme::ACCENT_GREEN
+            };
             Row::new(vec![
-                Cell::from(r.repo.clone()),
-                Cell::from(r.path.clone()),
-                Cell::from(r.branch.clone()),
-                Cell::from(if r.detached {
-                    "detached"
-                } else if r.bare {
-                    "bare"
-                } else {
-                    "normal"
-                }),
+                Cell::from(r.repo.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(r.path.clone()).style(Style::default().fg(theme::FG_SECONDARY)),
+                Cell::from(r.branch.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(state_text).style(Style::default().fg(state_color)),
                 Cell::from(
                     r.action
                         .as_ref()
                         .map(|a| a.label.clone())
                         .unwrap_or_else(|| "—".to_string()),
                 )
-                .style(Style::default().fg(Color::Cyan)),
+                .style(Style::default().fg(theme::ACCENT_CYAN)),
             ])
         })
         .collect();
 
-    render_table_with_selection(
+    let title = format!("Worktrees ({})", app.dashboard.worktrees.len());
+    widgets::render_styled_table(
         frame,
         area,
-        " Worktrees ",
+        &title,
         header,
         rows,
         [
@@ -385,10 +295,11 @@ fn render_worktrees(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_processes(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.processes.is_empty() {
-        render_empty(
+        widgets::render_empty_state(
             frame,
             area,
-            "No repo-scoped running processes detected from current command lines.",
+            "◇",
+            "No repo-scoped running processes detected.",
         );
         return;
     }
@@ -400,37 +311,35 @@ fn render_processes(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from("COMMAND"),
         Cell::from("ACTION"),
     ])
-    .style(
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    );
+    .style(theme::style_header());
 
     let rows: Vec<Row> = app
         .dashboard
         .processes
         .iter()
         .map(|p| {
+            let elapsed_color = elapsed_color(&p.elapsed);
             Row::new(vec![
-                Cell::from(p.repo.clone()),
-                Cell::from(p.pid.to_string()),
-                Cell::from(p.elapsed.clone()),
-                Cell::from(p.command.clone()),
+                Cell::from(p.repo.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(p.pid.to_string()).style(Style::default().fg(theme::FG_SECONDARY)),
+                Cell::from(p.elapsed.clone()).style(Style::default().fg(elapsed_color)),
+                Cell::from(p.command.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
                 Cell::from(
                     p.action
                         .as_ref()
                         .map(|a| a.label.clone())
                         .unwrap_or_else(|| "—".to_string()),
                 )
-                .style(Style::default().fg(Color::Cyan)),
+                .style(Style::default().fg(theme::ACCENT_CYAN)),
             ])
         })
         .collect();
 
-    render_table_with_selection(
+    let title = format!("Processes ({})", app.dashboard.processes.len());
+    widgets::render_styled_table(
         frame,
         area,
-        " Processes (x to run action) ",
+        &title,
         header,
         rows,
         [
@@ -447,9 +356,10 @@ fn render_processes(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_dependencies(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.dependencies.is_empty() {
-        render_empty(
+        widgets::render_empty_state(
             frame,
             area,
+            "◇",
             "No known dependency manifests found in scanned repos.",
         );
         return;
@@ -462,47 +372,52 @@ fn render_dependencies(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from("DETAILS"),
         Cell::from("ACTION"),
     ])
-    .style(
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    );
+    .style(theme::style_header());
 
     let rows: Vec<Row> = app
         .dashboard
         .dependencies
         .iter()
         .map(|d| {
-            Row::new(vec![
-                Cell::from(d.repo.clone()),
-                Cell::from(d.ecosystems.join(", ")),
-                Cell::from(d.issue_count.to_string()).style(Style::default().fg(
-                    if d.issue_count > 0 {
-                        Color::Yellow
+            let (issue_text, issue_color) = if d.issue_count == 0 {
+                ("✓".to_string(), theme::ACCENT_GREEN)
+            } else {
+                (
+                    d.issue_count.to_string(),
+                    if d.issue_count > 3 {
+                        theme::ACCENT_RED
                     } else {
-                        Color::Green
+                        theme::ACCENT_YELLOW
                     },
-                )),
+                )
+            };
+
+            Row::new(vec![
+                Cell::from(d.repo.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(d.ecosystems.join(", ")).style(Style::default().fg(theme::FG_SECONDARY)),
+                Cell::from(issue_text).style(Style::default().fg(issue_color)),
                 Cell::from(if d.issues.is_empty() {
                     "clean".to_string()
                 } else {
                     d.issues.join("; ")
-                }),
+                })
+                .style(Style::default().fg(theme::FG_PRIMARY)),
                 Cell::from(
                     d.action
                         .as_ref()
                         .map(|a| a.label.clone())
                         .unwrap_or_else(|| "—".to_string()),
                 )
-                .style(Style::default().fg(Color::Cyan)),
+                .style(Style::default().fg(theme::ACCENT_CYAN)),
             ])
         })
         .collect();
 
-    render_table_with_selection(
+    let title = format!("Dependencies ({})", app.dashboard.dependencies.len());
+    widgets::render_styled_table(
         frame,
         area,
-        " Dependencies ",
+        &title,
         header,
         rows,
         [
@@ -519,7 +434,7 @@ fn render_dependencies(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_env_audit(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.env_audit.is_empty() {
-        render_empty(frame, area, "No .env files found in scanned repos.");
+        widgets::render_empty_state(frame, area, "◇", "No .env files found in scanned repos.");
         return;
     }
 
@@ -531,33 +446,33 @@ fn render_env_audit(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from("TRACKED"),
         Cell::from("ACTION"),
     ])
-    .style(
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    );
+    .style(theme::style_header());
 
     let rows: Vec<Row> = app
         .dashboard
         .env_audit
         .iter()
         .map(|e| {
+            let missing_count = e.missing_keys.len();
+            let tracked_count = e.tracked_secret_files.len();
+
             Row::new(vec![
-                Cell::from(e.repo.clone()),
-                Cell::from(e.env_files.join(", ")),
-                Cell::from(e.missing_keys.len().to_string()).style(Style::default().fg(
-                    if e.missing_keys.is_empty() {
-                        Color::Green
+                Cell::from(e.repo.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(e.env_files.join(", ")).style(Style::default().fg(theme::FG_SECONDARY)),
+                Cell::from(missing_count.to_string()).style(Style::default().fg(
+                    if missing_count == 0 {
+                        theme::ACCENT_GREEN
                     } else {
-                        Color::Yellow
+                        theme::ACCENT_YELLOW
                     },
                 )),
-                Cell::from(e.extra_keys.len().to_string()),
-                Cell::from(e.tracked_secret_files.len().to_string()).style(Style::default().fg(
-                    if e.tracked_secret_files.is_empty() {
-                        Color::Green
+                Cell::from(e.extra_keys.len().to_string())
+                    .style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(tracked_count.to_string()).style(Style::default().fg(
+                    if tracked_count == 0 {
+                        theme::ACCENT_GREEN
                     } else {
-                        Color::Red
+                        theme::ACCENT_RED
                     },
                 )),
                 Cell::from(
@@ -566,15 +481,16 @@ fn render_env_audit(frame: &mut Frame, app: &App, area: Rect) {
                         .map(|a| a.label.clone())
                         .unwrap_or_else(|| "—".to_string()),
                 )
-                .style(Style::default().fg(Color::Cyan)),
+                .style(Style::default().fg(theme::ACCENT_CYAN)),
             ])
         })
         .collect();
 
-    render_table_with_selection(
+    let title = format!("Env Audit ({})", app.dashboard.env_audit.len());
+    widgets::render_styled_table(
         frame,
         area,
-        " Env Audit ",
+        &title,
         header,
         rows,
         [
@@ -592,7 +508,7 @@ fn render_env_audit(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_mcp(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.mcp_servers.is_empty() {
-        render_empty(frame, area, "No MCP configuration files detected.");
+        widgets::render_empty_state(frame, area, "◇", "No MCP configuration files detected.");
         return;
     }
 
@@ -603,44 +519,45 @@ fn render_mcp(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from("DETAIL"),
         Cell::from("ACTION"),
     ])
-    .style(
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    );
+    .style(theme::style_header());
 
     let rows: Vec<Row> = app
         .dashboard
         .mcp_servers
         .iter()
         .map(|m| {
+            let (health_text, health_color) = if m.healthy {
+                ("● healthy", theme::ACCENT_GREEN)
+            } else {
+                ("● unhealthy", theme::ACCENT_RED)
+            };
             Row::new(vec![
-                Cell::from(m.server_name.clone()),
-                Cell::from(m.source.clone()),
-                Cell::from(if m.healthy { "healthy" } else { "unhealthy" })
-                    .style(Style::default().fg(if m.healthy { Color::Green } else { Color::Red })),
-                Cell::from(m.detail.clone()),
+                Cell::from(m.server_name.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(m.source.clone()).style(Style::default().fg(theme::FG_SECONDARY)),
+                Cell::from(health_text).style(Style::default().fg(health_color)),
+                Cell::from(m.detail.clone()).style(Style::default().fg(theme::FG_PRIMARY)),
                 Cell::from(
                     m.action
                         .as_ref()
                         .map(|a| a.label.clone())
                         .unwrap_or_else(|| "—".to_string()),
                 )
-                .style(Style::default().fg(Color::Cyan)),
+                .style(Style::default().fg(theme::ACCENT_CYAN)),
             ])
         })
         .collect();
 
-    render_table_with_selection(
+    let title = format!("MCP Health ({})", app.dashboard.mcp_servers.len());
+    widgets::render_styled_table(
         frame,
         area,
-        " MCP Health ",
+        &title,
         header,
         rows,
         [
             Constraint::Length(20),
             Constraint::Fill(1),
-            Constraint::Length(10),
+            Constraint::Length(14),
             Constraint::Length(28),
             Constraint::Length(14),
         ],
@@ -651,7 +568,7 @@ fn render_mcp(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_ai_costs(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.providers.is_empty() {
-        render_empty(frame, area, "No AI provider data available yet.");
+        widgets::render_empty_state(frame, area, "◇", "No AI provider data available yet.");
         return;
     }
 
@@ -661,52 +578,57 @@ fn render_ai_costs(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from("SESSIONS"),
         Cell::from("INPUT TOKENS"),
         Cell::from("OUTPUT TOKENS"),
-        Cell::from("EST COST"),
+        Cell::from("COST USD"),
         Cell::from("NOTES"),
     ])
-    .style(
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    );
+    .style(theme::style_header());
 
     let rows: Vec<Row> = app
         .dashboard
         .providers
         .iter()
         .map(|p| {
+            let cost_color = if p.estimated_cost_usd > 10.0 {
+                theme::ACCENT_RED
+            } else if p.estimated_cost_usd > 1.0 {
+                theme::ACCENT_ORANGE
+            } else if p.estimated_cost_usd > 0.0 {
+                theme::ACCENT_YELLOW
+            } else {
+                theme::FG_DIMMED
+            };
+
             Row::new(vec![
-                Cell::from(p.provider.as_str()),
+                Cell::from(p.provider.as_str()).style(Style::default().fg(theme::FG_PRIMARY)),
                 Cell::from(if p.configured { "yes" } else { "no" }).style(Style::default().fg(
                     if p.configured {
-                        Color::Green
+                        theme::ACCENT_GREEN
                     } else {
-                        Color::Yellow
+                        theme::ACCENT_YELLOW
                     },
                 )),
-                Cell::from(p.sessions.to_string()),
-                Cell::from(p.total_input_tokens.to_string()),
-                Cell::from(p.total_output_tokens.to_string()),
-                Cell::from(format!("${:.2}", p.estimated_cost_usd)).style(Style::default().fg(
-                    if p.estimated_cost_usd > 0.0 {
-                        Color::Yellow
-                    } else {
-                        Color::DarkGray
-                    },
-                )),
+                Cell::from(p.sessions.to_string()).style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(widgets::format_number(p.total_input_tokens))
+                    .style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(widgets::format_number(p.total_output_tokens))
+                    .style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(format!("${:.2}", p.estimated_cost_usd))
+                    .style(Style::default().fg(cost_color)),
                 Cell::from(if p.notes.is_empty() {
                     "—".to_string()
                 } else {
                     p.notes.join("; ")
-                }),
+                })
+                .style(Style::default().fg(theme::FG_SECONDARY)),
             ])
         })
         .collect();
 
-    render_table_with_selection(
+    let title = format!("AI Usage & Cost ({})", app.dashboard.providers.len());
+    widgets::render_styled_table(
         frame,
         area,
-        " AI Usage & Cost ",
+        &title,
         header,
         rows,
         [
@@ -723,37 +645,60 @@ fn render_ai_costs(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_table_with_selection<const N: usize>(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    header: Row,
-    rows: Vec<Row>,
-    widths: [Constraint; N],
-    selected: usize,
-    len: usize,
-) {
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::bordered().title(title))
-        .row_highlight_style(
-            Style::default()
-                .add_modifier(Modifier::REVERSED)
-                .add_modifier(Modifier::BOLD),
-        );
-
-    let mut state = TableState::default();
-    state.select(Some(selected.min(len.saturating_sub(1))));
-    frame.render_stateful_widget(table, area, &mut state);
+/// Determine elapsed time color: green < 1m, yellow < 5m, orange < 30m, red >= 30m.
+fn elapsed_color(elapsed: &str) -> ratatui::style::Color {
+    // Elapsed is typically "Xm Ys" or "Xs" format
+    let lower = elapsed.to_lowercase();
+    if lower.contains('h') {
+        return theme::ACCENT_RED;
+    }
+    // Try to extract minute value
+    if let Some(m_pos) = lower.find('m') {
+        if let Ok(mins) = lower[..m_pos].trim().parse::<u32>() {
+            return if mins >= 30 {
+                theme::ACCENT_RED
+            } else if mins >= 5 {
+                theme::ACCENT_ORANGE
+            } else {
+                theme::ACCENT_YELLOW
+            };
+        }
+    }
+    // Seconds only — short-lived
+    theme::ACCENT_GREEN
 }
 
-fn render_empty(frame: &mut Frame, area: Rect, message: &str) {
-    frame.render_widget(
-        Paragraph::new(message)
-            .block(Block::bordered().border_style(Style::default().fg(Color::DarkGray)))
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray)),
-        area,
-    );
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn elapsed_seconds_is_green() {
+        assert_eq!(elapsed_color("30s"), theme::ACCENT_GREEN);
+        assert_eq!(elapsed_color("5s"), theme::ACCENT_GREEN);
+    }
+
+    #[test]
+    fn elapsed_short_minutes_is_yellow() {
+        assert_eq!(elapsed_color("1m 30s"), theme::ACCENT_YELLOW);
+        assert_eq!(elapsed_color("4m"), theme::ACCENT_YELLOW);
+    }
+
+    #[test]
+    fn elapsed_medium_minutes_is_orange() {
+        assert_eq!(elapsed_color("5m"), theme::ACCENT_ORANGE);
+        assert_eq!(elapsed_color("29m"), theme::ACCENT_ORANGE);
+    }
+
+    #[test]
+    fn elapsed_long_minutes_is_red() {
+        assert_eq!(elapsed_color("30m"), theme::ACCENT_RED);
+        assert_eq!(elapsed_color("45m 10s"), theme::ACCENT_RED);
+    }
+
+    #[test]
+    fn elapsed_hours_is_red() {
+        assert_eq!(elapsed_color("1h 30m"), theme::ACCENT_RED);
+        assert_eq!(elapsed_color("2h"), theme::ACCENT_RED);
+    }
 }

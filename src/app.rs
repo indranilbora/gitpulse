@@ -109,6 +109,20 @@ impl App {
         }
     }
 
+    /// Item count for a specific section (used by sidebar badges).
+    pub fn section_row_count(&self, section: DashboardSection) -> usize {
+        match section {
+            DashboardSection::Home => self.dashboard.alerts.len(),
+            DashboardSection::Repos => self.filtered_repos().len(),
+            DashboardSection::Worktrees => self.dashboard.worktrees.len(),
+            DashboardSection::Processes => self.dashboard.processes.len(),
+            DashboardSection::Dependencies => self.dashboard.dependencies.len(),
+            DashboardSection::EnvAudit => self.dashboard.env_audit.len(),
+            DashboardSection::McpHealth => self.dashboard.mcp_servers.len(),
+            DashboardSection::AiCosts => self.dashboard.providers.len(),
+        }
+    }
+
     pub fn move_selection(&mut self, delta: i32) {
         let len = self.active_row_count();
         if len == 0 {
