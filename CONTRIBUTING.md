@@ -33,6 +33,14 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
+## Provider cost data (optional local check)
+
+The AI cost collector will use live provider APIs when configured and otherwise fall back to local logs.
+
+- OpenAI: `OPENAI_ADMIN_KEY`
+- Anthropic: `ANTHROPIC_ADMIN_API_KEY`
+- Gemini: `AGENTPULSE_GEMINI_BQ_TABLE` (BigQuery billing export + `bq` CLI auth)
+
 ## Project layout
 
 - `src/main.rs`: CLI entrypoint, event loop, non-interactive output
