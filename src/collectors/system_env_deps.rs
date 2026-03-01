@@ -1,4 +1,4 @@
-use crate::dashboard::{ActionCommand, DependencyHealth, EnvAuditResult, RepoProcess};
+use crate::dashboard::{ActionCommand, ActionKind, DependencyHealth, EnvAuditResult, RepoProcess};
 use crate::git::Repo;
 use std::collections::BTreeSet;
 use std::fs;
@@ -44,10 +44,10 @@ pub fn collect_repo_processes(repos: &[Repo]) -> Vec<RepoProcess> {
                     pid,
                     elapsed: elapsed.clone(),
                     command: trim_command(&command, 160),
-                    action: Some(ActionCommand {
-                        label: "kill process".to_string(),
-                        command: format!("kill {}", pid),
-                    }),
+                    action: Some(ActionCommand::new(
+                        "kill process",
+                        ActionKind::KillProcess { pid },
+                    )),
                 });
                 break;
             }
@@ -78,10 +78,12 @@ pub fn collect_dependency_health(repos: &[Repo]) -> Vec<DependencyHealth> {
                 || has("bun.lockb"))
             {
                 issues.push("package.json without lockfile".to_string());
-                action = Some(ActionCommand {
-                    label: "create lockfile".to_string(),
-                    command: format!("cd {:?} && npm install --package-lock-only", root),
-                });
+                action = Some(ActionCommand::new(
+                    "create lockfile",
+                    ActionKind::NpmInstallLockfile {
+                        repo_path: root.to_string_lossy().to_string(),
+                    },
+                ));
             }
         }
 
@@ -89,10 +91,12 @@ pub fn collect_dependency_health(repos: &[Repo]) -> Vec<DependencyHealth> {
             ecosystems.push("rust".to_string());
             if !has("Cargo.lock") {
                 issues.push("Cargo.toml without Cargo.lock".to_string());
-                action.get_or_insert(ActionCommand {
-                    label: "generate lockfile".to_string(),
-                    command: format!("cd {:?} && cargo generate-lockfile", root),
-                });
+                action.get_or_insert(ActionCommand::new(
+                    "generate lockfile",
+                    ActionKind::CargoGenerateLockfile {
+                        repo_path: root.to_string_lossy().to_string(),
+                    },
+                ));
             }
         }
 
@@ -102,10 +106,12 @@ pub fn collect_dependency_health(repos: &[Repo]) -> Vec<DependencyHealth> {
                 && !(has("poetry.lock") || has("uv.lock") || has("requirements.txt"))
             {
                 issues.push("pyproject.toml without lock/export file".to_string());
-                action.get_or_insert(ActionCommand {
-                    label: "lock python deps".to_string(),
-                    command: format!("cd {:?} && uv lock", root),
-                });
+                action.get_or_insert(ActionCommand::new(
+                    "lock python deps",
+                    ActionKind::UvLock {
+                        repo_path: root.to_string_lossy().to_string(),
+                    },
+                ));
             }
             if has("requirements.txt") {
                 let unconstrained =
@@ -115,10 +121,12 @@ pub fn collect_dependency_health(repos: &[Repo]) -> Vec<DependencyHealth> {
                         "requirements.txt has {} unconstrained entries",
                         unconstrained
                     ));
-                    action.get_or_insert(ActionCommand {
-                        label: "pin requirements".to_string(),
-                        command: format!("cd {:?} && pip-compile requirements.txt", root),
-                    });
+                    action.get_or_insert(ActionCommand::new(
+                        "pin requirements",
+                        ActionKind::PipCompileRequirements {
+                            repo_path: root.to_string_lossy().to_string(),
+                        },
+                    ));
                 }
             }
         }
@@ -127,10 +135,12 @@ pub fn collect_dependency_health(repos: &[Repo]) -> Vec<DependencyHealth> {
             ecosystems.push("go".to_string());
             if !has("go.sum") {
                 issues.push("go.mod without go.sum".to_string());
-                action.get_or_insert(ActionCommand {
-                    label: "generate go.sum".to_string(),
-                    command: format!("cd {:?} && go mod tidy", root),
-                });
+                action.get_or_insert(ActionCommand::new(
+                    "generate go.sum",
+                    ActionKind::GoModTidy {
+                        repo_path: root.to_string_lossy().to_string(),
+                    },
+                ));
             }
         }
 
@@ -138,10 +148,12 @@ pub fn collect_dependency_health(repos: &[Repo]) -> Vec<DependencyHealth> {
             ecosystems.push("ruby".to_string());
             if !has("Gemfile.lock") {
                 issues.push("Gemfile without Gemfile.lock".to_string());
-                action.get_or_insert(ActionCommand {
-                    label: "generate Gemfile.lock".to_string(),
-                    command: format!("cd {:?} && bundle lock", root),
-                });
+                action.get_or_insert(ActionCommand::new(
+                    "generate Gemfile.lock",
+                    ActionKind::BundleLock {
+                        repo_path: root.to_string_lossy().to_string(),
+                    },
+                ));
             }
         }
 
@@ -215,19 +227,20 @@ pub fn collect_env_audit(repos: &[Repo]) -> Vec<EnvAuditResult> {
             .collect::<Vec<String>>();
 
         let action = if !tracked_secret_files.is_empty() {
-            Some(ActionCommand {
-                label: "ignore env files".to_string(),
-                command: format!(
-                    "cd {:?} && printf '\n.env*\n' >> .gitignore && git rm --cached {}",
-                    root,
-                    tracked_secret_files.join(" ")
-                ),
-            })
+            Some(ActionCommand::new(
+                "ignore env files",
+                ActionKind::IgnoreEnvFiles {
+                    repo_path: root.to_string_lossy().to_string(),
+                    files: tracked_secret_files.clone(),
+                },
+            ))
         } else if !missing_keys.is_empty() {
-            Some(ActionCommand {
-                label: "seed .env from example".to_string(),
-                command: format!("cd {:?} && cp .env.example .env", root),
-            })
+            Some(ActionCommand::new(
+                "seed .env from example",
+                ActionKind::SeedEnvFromExample {
+                    repo_path: root.to_string_lossy().to_string(),
+                },
+            ))
         } else {
             None
         };

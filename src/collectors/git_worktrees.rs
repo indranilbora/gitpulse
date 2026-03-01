@@ -1,5 +1,5 @@
 use crate::agent;
-use crate::dashboard::{ActionCommand, DashboardAlert, RepoRow, WorktreeRow};
+use crate::dashboard::{ActionCommand, ActionKind, DashboardAlert, RepoRow, WorktreeRow};
 use crate::git::Repo;
 use std::path::Path;
 use std::process::Command;
@@ -12,10 +12,8 @@ pub fn collect_repo_rows(repos: &[Repo]) -> Vec<RepoRow> {
             let action = if rec.short_action == "noop" {
                 None
             } else {
-                Some(ActionCommand {
-                    label: rec.action.to_string(),
-                    command: rec.command,
-                })
+                agent::recommended_action_kind(repo)
+                    .map(|kind| ActionCommand::new(rec.action, kind))
             };
 
             RepoRow {
@@ -78,10 +76,12 @@ pub fn collect_git_alerts(repo_rows: &[RepoRow], worktrees: &[WorktreeRow]) -> V
                 title: format!("{} has local changes", row.name),
                 detail: format!("{} modified/untracked file(s)", row.dirty),
                 repo: Some(row.name.clone()),
-                action: Some(ActionCommand {
-                    label: "open status".to_string(),
-                    command: format!("cd {:?} && git status -sb", row.path),
-                }),
+                action: Some(ActionCommand::new(
+                    "open status",
+                    ActionKind::GitStatus {
+                        repo_path: row.path.clone(),
+                    },
+                )),
             });
         }
 
@@ -91,10 +91,12 @@ pub fn collect_git_alerts(repo_rows: &[RepoRow], worktrees: &[WorktreeRow]) -> V
                 title: format!("{} is behind remote", row.name),
                 detail: format!("{} commit(s) behind", row.behind),
                 repo: Some(row.name.clone()),
-                action: Some(ActionCommand {
-                    label: "pull --rebase".to_string(),
-                    command: format!("cd {:?} && git pull --rebase", row.path),
-                }),
+                action: Some(ActionCommand::new(
+                    "pull --rebase",
+                    ActionKind::GitPullRebase {
+                        repo_path: row.path.clone(),
+                    },
+                )),
             });
         }
 
@@ -104,10 +106,12 @@ pub fn collect_git_alerts(repo_rows: &[RepoRow], worktrees: &[WorktreeRow]) -> V
                 title: format!("{} has unpushed commits", row.name),
                 detail: format!("{} commit(s) ahead", row.ahead),
                 repo: Some(row.name.clone()),
-                action: Some(ActionCommand {
-                    label: "push".to_string(),
-                    command: format!("cd {:?} && git push", row.path),
-                }),
+                action: Some(ActionCommand::new(
+                    "push",
+                    ActionKind::GitPush {
+                        repo_path: row.path.clone(),
+                    },
+                )),
             });
         }
     }
@@ -118,10 +122,12 @@ pub fn collect_git_alerts(repo_rows: &[RepoRow], worktrees: &[WorktreeRow]) -> V
             title: format!("Detached worktree in {}", wt.repo),
             detail: format!("{} is detached", wt.path),
             repo: Some(wt.repo.clone()),
-            action: Some(ActionCommand {
-                label: "inspect worktree".to_string(),
-                command: format!("cd {:?} && git status -sb", wt.path),
-            }),
+            action: Some(ActionCommand::new(
+                "inspect worktree",
+                ActionKind::GitStatus {
+                    repo_path: wt.path.clone(),
+                },
+            )),
         });
     }
 
@@ -136,10 +142,12 @@ fn default_worktree_row(repo: &Repo) -> WorktreeRow {
         branch: repo.status.branch.clone(),
         detached: repo.status.is_detached,
         bare: false,
-        action: Some(ActionCommand {
-            label: "list worktrees".to_string(),
-            command: format!("cd {:?} && git worktree list", repo.path.to_string_lossy()),
-        }),
+        action: Some(ActionCommand::new(
+            "list worktrees",
+            ActionKind::GitWorktreeList {
+                repo_path: repo.path.to_string_lossy().to_string(),
+            },
+        )),
     }
 }
 
@@ -169,10 +177,12 @@ fn parse_worktree_output(repo: &Repo, raw: &str) -> Vec<WorktreeRow> {
             },
             detached: cur.detached,
             bare: cur.bare,
-            action: Some(ActionCommand {
-                label: "open worktree".to_string(),
-                command: format!("cd {:?} && git status -sb", cur.path),
-            }),
+            action: Some(ActionCommand::new(
+                "open worktree",
+                ActionKind::GitStatus {
+                    repo_path: cur.path.clone(),
+                },
+            )),
         });
 
         cur.path.clear();

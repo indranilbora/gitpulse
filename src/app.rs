@@ -12,6 +12,8 @@ pub enum AppMode {
     Help,
     /// Typing a commit message; Enter commits, Esc cancels.
     Commit,
+    /// Confirming a selected action; Enter runs, Esc cancels.
+    ConfirmAction,
 }
 
 pub struct App {
@@ -35,6 +37,8 @@ pub struct App {
     pub dashboard: DashboardSnapshot,
     /// Transient status message (e.g. pull/push result). Clears after 4 s.
     pub notification: Option<(String, Instant)>,
+    /// Action staged for confirmation in `ConfirmAction` mode.
+    pub pending_action: Option<ActionCommand>,
 }
 
 impl App {
@@ -55,6 +59,7 @@ impl App {
             section: DashboardSection::Home,
             dashboard: DashboardSnapshot::default(),
             notification: None,
+            pending_action: None,
         }
     }
 
@@ -144,14 +149,8 @@ impl App {
                 .and_then(|a| a.action.clone()),
             DashboardSection::Repos => self.selected_repo().and_then(|repo| {
                 let rec = agent::recommend(repo);
-                if rec.short_action == "noop" {
-                    None
-                } else {
-                    Some(ActionCommand {
-                        label: rec.action.to_string(),
-                        command: rec.command,
-                    })
-                }
+                agent::recommended_action_kind(repo)
+                    .map(|action| ActionCommand::new(rec.action, action))
             }),
             DashboardSection::Worktrees => self
                 .dashboard
@@ -215,6 +214,18 @@ impl App {
             if t.elapsed() > std::time::Duration::from_secs(4) {
                 self.notification = None;
             }
+        }
+    }
+
+    pub fn stage_action_confirmation(&mut self, action: ActionCommand) {
+        self.pending_action = Some(action);
+        self.mode = AppMode::ConfirmAction;
+    }
+
+    pub fn clear_pending_action(&mut self) {
+        self.pending_action = None;
+        if self.mode == AppMode::ConfirmAction {
+            self.mode = AppMode::Normal;
         }
     }
 }

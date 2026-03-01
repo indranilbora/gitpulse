@@ -1,3 +1,4 @@
+use crate::dashboard::ActionKind;
 use crate::git::Repo;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -154,6 +155,60 @@ pub fn recommend(repo: &Repo) -> Recommendation {
         command: cmd("git status -sb"),
         reason: "Working tree and remote state are clean.".to_string(),
     }
+}
+
+pub fn recommended_action_kind(repo: &Repo) -> Option<ActionKind> {
+    let repo_path = repo.path.to_string_lossy().to_string();
+
+    if repo.status.is_detached {
+        return Some(ActionKind::GitSwitchCreate {
+            repo_path,
+            branch: "rescue-work".to_string(),
+        });
+    }
+
+    if repo.status.behind_count > 0 && repo.status.uncommitted_count > 0 {
+        return Some(ActionKind::GitAddCommitPullRebase {
+            repo_path,
+            message: "wip".to_string(),
+        });
+    }
+
+    if repo.status.behind_count > 0 && repo.status.unpushed_count > 0 {
+        return Some(ActionKind::GitPullRebasePush { repo_path });
+    }
+
+    if repo.status.behind_count > 0 {
+        return Some(ActionKind::GitPullRebase { repo_path });
+    }
+
+    if repo.status.uncommitted_count > 0 && repo.status.unpushed_count > 0 {
+        return Some(ActionKind::GitAddCommitPush {
+            repo_path,
+            message: "wip".to_string(),
+        });
+    }
+
+    if repo.status.uncommitted_count > 0 {
+        return Some(ActionKind::GitAddCommit {
+            repo_path,
+            message: "wip".to_string(),
+        });
+    }
+
+    if repo.status.unpushed_count > 0 {
+        return Some(ActionKind::GitPush { repo_path });
+    }
+
+    if repo.status.stash_count > 0 {
+        return Some(ActionKind::GitStashList { repo_path });
+    }
+
+    if !repo.status.has_remote {
+        return Some(ActionKind::GitRemoteList { repo_path });
+    }
+
+    None
 }
 
 pub fn sorted_recommendations(repos: &[Repo]) -> Vec<(&Repo, Recommendation)> {

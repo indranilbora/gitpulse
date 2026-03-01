@@ -1,3 +1,4 @@
+pub mod action_confirm;
 pub mod commit_bar;
 pub mod filter;
 pub mod help;
@@ -45,7 +46,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     let chunks = Layout::vertical([
         Constraint::Length(3), // summary
-        Constraint::Fill(1),  // sidebar + section content
+        Constraint::Fill(1),   // sidebar + section content
         Constraint::Length(1), // status / filter / commit
     ])
     .split(frame.area());
@@ -71,9 +72,27 @@ pub fn render(frame: &mut Frame, app: &App) {
     if app.mode == AppMode::Help {
         help::render(frame, app);
     }
+    if app.mode == AppMode::ConfirmAction {
+        action_confirm::render(frame, app);
+    }
 }
 
 fn render_status_bar(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) {
+    if app.mode == AppMode::ConfirmAction {
+        let line = Line::from(vec![
+            Span::raw(" "),
+            Span::styled("Enter / y", Style::default().fg(theme::ACCENT_GREEN)),
+            Span::styled(" run once  ", Style::default().fg(theme::FG_DIMMED)),
+            Span::styled("Esc / n", Style::default().fg(theme::ACCENT_YELLOW)),
+            Span::styled(" cancel", Style::default().fg(theme::FG_DIMMED)),
+        ]);
+        frame.render_widget(
+            Paragraph::new(line).style(Style::default().bg(theme::BG_SECONDARY)),
+            area,
+        );
+        return;
+    }
+
     // Show transient notification if present
     if let Some((msg, _)) = &app.notification {
         let line = Line::from(vec![
@@ -93,7 +112,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: ratatui::layout::Rect) 
     let hints: &[(&str, &str)] = &[
         ("h/l", "section"),
         ("j/k", "row"),
-        ("x", "action"),
+        ("x", "review"),
         ("r", "refresh"),
         ("/", "filter"),
         ("?", "help"),

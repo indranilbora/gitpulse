@@ -24,10 +24,12 @@ pub fn render(frame: &mut Frame, _app: &App) {
         (
             "ACTIONS",
             &[
-                ("x", "Run selected action"),
+                ("x", "Review selected action"),
+                ("Enter / y", "Confirm pending action"),
+                ("Esc / n", "Cancel pending action"),
                 ("r", "Force refresh"),
                 ("/", "Filter search"),
-                ("Enter", "Open in editor"),
+                ("Enter (repos)", "Open in editor"),
                 ("o", "Open in file manager"),
             ],
         ),

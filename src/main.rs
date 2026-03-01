@@ -26,7 +26,7 @@ use monitor::StatusCache;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
     io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::Sender;
@@ -224,6 +224,8 @@ async fn event_loop(
     let (cache_tx, mut cache_rx) = tokio::sync::mpsc::channel::<StatusCache>(1);
     let (dash_tx, mut dash_rx) = tokio::sync::mpsc::channel::<dashboard::DashboardSnapshot>(1);
     let (notif_tx, mut notif_rx) = tokio::sync::mpsc::channel::<String>(8);
+    let (action_done_tx, mut action_done_rx) =
+        tokio::sync::mpsc::channel::<actions::ActionCompletion>(8);
 
     // SIGTERM: restore terminal cleanly
     let (term_tx, mut term_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -248,6 +250,7 @@ async fn event_loop(
         cache_tx.clone(),
         dash_tx.clone(),
     );
+    let mut pending_rescan = false;
 
     let mut last_refresh = Instant::now();
 
@@ -257,6 +260,23 @@ async fn event_loop(
         // Drain all pending notifications
         while let Ok(msg) = notif_rx.try_recv() {
             app.notify(msg);
+        }
+        while let Ok(done) = action_done_rx.try_recv() {
+            if let Some(repo_path) = done.affected_repo_path.as_deref() {
+                invalidate_cache_for_repo(&mut current_cache, Path::new(repo_path));
+            }
+            if app.is_scanning {
+                pending_rescan = true;
+            } else {
+                trigger_scan(
+                    app.config.clone(),
+                    scan_tx.clone(),
+                    current_cache.clone(),
+                    cache_tx.clone(),
+                    dash_tx.clone(),
+                );
+                app.is_scanning = true;
+            }
         }
 
         if let Ok(updated) = cache_rx.try_recv() {
@@ -272,6 +292,18 @@ async fn event_loop(
             app.is_scanning = false;
             app.last_scan = Some(Local::now());
             last_refresh = Instant::now();
+
+            if pending_rescan {
+                trigger_scan(
+                    app.config.clone(),
+                    scan_tx.clone(),
+                    current_cache.clone(),
+                    cache_tx.clone(),
+                    dash_tx.clone(),
+                );
+                app.is_scanning = true;
+                pending_rescan = false;
+            }
         }
 
         if term_rx.try_recv().is_ok() {
@@ -290,6 +322,8 @@ async fn event_loop(
                     &mut current_cache,
                     &dash_tx,
                     &notif_tx,
+                    &action_done_tx,
+                    &mut pending_rescan,
                 ),
                 Event::Resize(_, _) => {}
                 _ => {}
@@ -345,6 +379,8 @@ fn handle_key(
     current_cache: &mut StatusCache,
     dash_tx: &tokio::sync::mpsc::Sender<dashboard::DashboardSnapshot>,
     notif_tx: &tokio::sync::mpsc::Sender<String>,
+    action_done_tx: &tokio::sync::mpsc::Sender<actions::ActionCompletion>,
+    pending_rescan: &mut bool,
 ) {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         app.should_quit = true;
@@ -395,14 +431,19 @@ fn handle_key(
                 app.selected = 0;
             }
             KeyCode::Char('r') => {
-                trigger_scan(
-                    app.config.clone(),
-                    scan_tx.clone(),
-                    current_cache.clone(),
-                    cache_tx.clone(),
-                    dash_tx.clone(),
-                );
-                app.is_scanning = true;
+                if app.is_scanning {
+                    *pending_rescan = true;
+                    app.notify("Refresh queued");
+                } else {
+                    trigger_scan(
+                        app.config.clone(),
+                        scan_tx.clone(),
+                        current_cache.clone(),
+                        cache_tx.clone(),
+                        dash_tx.clone(),
+                    );
+                    app.is_scanning = true;
+                }
             }
             KeyCode::Char('/') => {
                 if app.section == dashboard::DashboardSection::Repos {
@@ -430,8 +471,8 @@ fn handle_key(
             KeyCode::Char('x') | KeyCode::Char('X') => {
                 if let Some(action) = app.selected_action() {
                     let label = action.label.clone();
-                    actions::run_shell_command(&action.command, notif_tx.clone());
-                    app.notify(format!("Running action: {}", label));
+                    app.stage_action_confirmation(action);
+                    app.notify(format!("Review action: {}", label));
                 } else {
                     app.notify("No action available on this row");
                 }
@@ -456,22 +497,35 @@ fn handle_key(
             }
             KeyCode::Char('f') if app.section == dashboard::DashboardSection::Repos => {
                 if let Some(repo) = app.selected_repo() {
-                    let path = repo.path.clone();
-                    let _ = actions::git_fetch(&path);
+                    app.stage_action_confirmation(dashboard::ActionCommand::new(
+                        "fetch latest",
+                        dashboard::ActionKind::GitFetch {
+                            repo_path: repo.path.to_string_lossy().to_string(),
+                        },
+                    ));
+                    app.notify("Review fetch action");
                 }
             }
             KeyCode::Char('p') if app.section == dashboard::DashboardSection::Repos => {
                 if let Some(repo) = app.selected_repo() {
-                    let path = repo.path.clone();
-                    actions::git_pull(&path, notif_tx.clone());
-                    app.notify("Pulling…");
+                    app.stage_action_confirmation(dashboard::ActionCommand::new(
+                        "pull --rebase",
+                        dashboard::ActionKind::GitPullRebase {
+                            repo_path: repo.path.to_string_lossy().to_string(),
+                        },
+                    ));
+                    app.notify("Review pull action");
                 }
             }
             KeyCode::Char('P') if app.section == dashboard::DashboardSection::Repos => {
                 if let Some(repo) = app.selected_repo() {
-                    let path = repo.path.clone();
-                    actions::git_push(&path, notif_tx.clone());
-                    app.notify("Pushing…");
+                    app.stage_action_confirmation(dashboard::ActionCommand::new(
+                        "push",
+                        dashboard::ActionKind::GitPush {
+                            repo_path: repo.path.to_string_lossy().to_string(),
+                        },
+                    ));
+                    app.notify("Review push action");
                 }
             }
             KeyCode::Char('c') if app.section == dashboard::DashboardSection::Repos => {
@@ -500,6 +554,23 @@ fn handle_key(
         AppMode::Help => {
             app.mode = AppMode::Normal;
         }
+        AppMode::ConfirmAction => match key.code {
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                app.clear_pending_action();
+                app.notify("Action cancelled");
+            }
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if let Some(action) = app.pending_action.take() {
+                    let label = action.label.clone();
+                    actions::run_action(action.action, notif_tx.clone(), action_done_tx.clone());
+                    app.mode = AppMode::Normal;
+                    app.notify(format!("Running action: {}", label));
+                } else {
+                    app.mode = AppMode::Normal;
+                }
+            }
+            _ => {}
+        },
         AppMode::Commit => match key.code {
             KeyCode::Esc => {
                 app.commit_message.clear();
@@ -510,7 +581,7 @@ fn handle_key(
                     if let Some(repo) = app.selected_repo() {
                         let path = repo.path.clone();
                         let msg = app.commit_message.clone();
-                        actions::git_commit(&path, &msg, notif_tx.clone());
+                        actions::git_commit(&path, &msg, notif_tx.clone(), action_done_tx.clone());
                         app.notify(format!("Committing \"{}\"…", msg));
                     }
                 }
@@ -526,6 +597,10 @@ fn handle_key(
             _ => {}
         },
     }
+}
+
+fn invalidate_cache_for_repo(cache: &mut StatusCache, repo_path: &Path) {
+    cache.remove(repo_path);
 }
 
 // ─── --once output ───────────────────────────────────────────────────────────
