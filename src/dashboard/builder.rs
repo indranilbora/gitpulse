@@ -1,8 +1,9 @@
 use crate::collectors::{collect_all, CollectorOutput};
 use crate::dashboard::models::{
-    ActionCommand, DashboardAlert, DashboardSnapshot, OverviewMetrics, ProviderKind,
+    ActionCommand, ActionKind, DashboardAlert, DashboardSnapshot, OverviewMetrics, ProviderKind,
 };
 use crate::git::Repo;
+use std::collections::HashSet;
 
 pub fn collect_and_build(repos: &[Repo]) -> DashboardSnapshot {
     let collected = collect_all(repos);
@@ -34,9 +35,11 @@ pub fn build_snapshot(repos: &[Repo], mut collected: CollectorOutput) -> Dashboa
     let mcp_unhealthy = collected.mcp_servers.iter().filter(|m| !m.healthy).count();
 
     collected.alerts.extend(build_system_alerts(&collected));
+    dedupe_alerts(&mut collected.alerts);
     collected.alerts.sort_by(|a, b| {
         severity_rank(&b.severity)
             .cmp(&severity_rank(&a.severity))
+            .then_with(|| b.action.is_some().cmp(&a.action.is_some()))
             .then_with(|| a.title.cmp(&b.title))
     });
     collected.alerts.truncate(120);
@@ -87,10 +90,12 @@ fn build_system_alerts(collected: &CollectorOutput) -> Vec<DashboardAlert> {
             title: "Dependency hygiene issues detected".to_string(),
             detail: format!("{} repo(s) with dependency issues", dep_issues),
             repo: None,
-            action: Some(ActionCommand {
-                label: "open dependency view".to_string(),
-                command: "echo 'Switch to Deps section in AgentPulse'".to_string(),
-            }),
+            action: Some(ActionCommand::new(
+                "open dependency view",
+                ActionKind::ShowMessage {
+                    message: "Switch to Deps section in AgentPulse".to_string(),
+                },
+            )),
         });
     }
 
@@ -105,10 +110,12 @@ fn build_system_alerts(collected: &CollectorOutput) -> Vec<DashboardAlert> {
             title: "Tracked env files may contain secrets".to_string(),
             detail: format!("{} repo(s) have tracked sensitive env files", env_risky),
             repo: None,
-            action: Some(ActionCommand {
-                label: "review env audit".to_string(),
-                command: "echo 'Switch to Env Audit section in AgentPulse'".to_string(),
-            }),
+            action: Some(ActionCommand::new(
+                "review env audit",
+                ActionKind::ShowMessage {
+                    message: "Switch to Env Audit section in AgentPulse".to_string(),
+                },
+            )),
         });
     }
 
@@ -119,10 +126,12 @@ fn build_system_alerts(collected: &CollectorOutput) -> Vec<DashboardAlert> {
             title: "MCP server health issues".to_string(),
             detail: format!("{} MCP server(s) unhealthy", mcp_bad),
             repo: None,
-            action: Some(ActionCommand {
-                label: "inspect MCP".to_string(),
-                command: "echo 'Switch to MCP Health section in AgentPulse'".to_string(),
-            }),
+            action: Some(ActionCommand::new(
+                "inspect MCP",
+                ActionKind::ShowMessage {
+                    message: "Switch to MCP Health section in AgentPulse".to_string(),
+                },
+            )),
         });
     }
 
@@ -140,6 +149,20 @@ fn build_system_alerts(collected: &CollectorOutput) -> Vec<DashboardAlert> {
     alerts
 }
 
+fn dedupe_alerts(alerts: &mut Vec<DashboardAlert>) {
+    let mut seen = HashSet::new();
+    alerts.retain(|alert| {
+        let key = format!(
+            "{}|{}|{}|{}",
+            alert.severity,
+            alert.title,
+            alert.detail,
+            alert.repo.as_deref().unwrap_or_default()
+        );
+        seen.insert(key)
+    });
+}
+
 fn severity_rank(severity: &str) -> u8 {
     match severity {
         "critical" => 4,
@@ -155,5 +178,32 @@ fn provider_rank(kind: ProviderKind) -> u8 {
         ProviderKind::Claude => 0,
         ProviderKind::Gemini => 1,
         ProviderKind::OpenAi => 2,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dedupe_alerts_removes_duplicates() {
+        let mut alerts = vec![
+            DashboardAlert {
+                severity: "warn".to_string(),
+                title: "dup".to_string(),
+                detail: "same".to_string(),
+                repo: Some("r1".to_string()),
+                action: None,
+            },
+            DashboardAlert {
+                severity: "warn".to_string(),
+                title: "dup".to_string(),
+                detail: "same".to_string(),
+                repo: Some("r1".to_string()),
+                action: None,
+            },
+        ];
+        dedupe_alerts(&mut alerts);
+        assert_eq!(alerts.len(), 1);
     }
 }

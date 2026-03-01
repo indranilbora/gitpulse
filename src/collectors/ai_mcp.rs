@@ -1,4 +1,4 @@
-use crate::dashboard::{ActionCommand, McpServerHealth, ProviderKind, ProviderUsage};
+use crate::dashboard::{ActionCommand, ActionKind, McpServerHealth, ProviderKind, ProviderUsage};
 use crate::git::Repo;
 use chrono::{Datelike, Duration as ChronoDuration, TimeZone, Utc};
 use serde_json::Value;
@@ -128,18 +128,22 @@ pub fn collect_mcp_servers(repos: &[Repo]) -> Vec<McpServerHealth> {
                 if command.starts_with("http://") || command.starts_with("https://") {
                     None
                 } else {
-                    Some(ActionCommand {
-                        label: "probe server".to_string(),
-                        command: format!("{} --help", binary),
-                    })
+                    Some(ActionCommand::new(
+                        "probe server",
+                        ActionKind::ProbeBinaryHelp {
+                            binary: binary.to_string(),
+                        },
+                    ))
                 }
             } else if binary.is_empty() {
                 None
             } else {
-                Some(ActionCommand {
-                    label: "check binary".to_string(),
-                    command: format!("command -v {}", binary),
-                })
+                Some(ActionCommand::new(
+                    "check binary",
+                    ActionKind::CheckBinaryInPath {
+                        binary: binary.to_string(),
+                    },
+                ))
             };
 
             out.push(McpServerHealth {
@@ -212,6 +216,7 @@ fn collect_provider(
     let mut configured = false;
     let mut config_sources = Vec::new();
     let mut notes = Vec::new();
+    let mut source_updated_at_epoch_secs: i64 = 0;
 
     for key in env_keys {
         if std::env::var(key).is_ok() {
@@ -237,11 +242,15 @@ fn collect_provider(
     let mut input_tokens = 0u64;
     let mut output_tokens = 0u64;
     let mut explicit_cost = 0.0f64;
+    let mut has_local_data = false;
 
     for file in &log_files {
         let Ok(metadata) = fs::metadata(file) else {
             continue;
         };
+        if let Some(ts) = modified_epoch_secs(&metadata) {
+            source_updated_at_epoch_secs = source_updated_at_epoch_secs.max(ts);
+        }
         if metadata.len() > 5 * 1024 * 1024 {
             notes.push(format!("skipped large file: {}", file.to_string_lossy()));
             continue;
@@ -256,9 +265,10 @@ fn collect_provider(
         }
 
         if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+            has_local_data = true;
+            sessions = sessions.saturating_add(estimated_sessions(&value));
             scan_json_value(
                 &value,
-                &mut sessions,
                 &mut input_tokens,
                 &mut output_tokens,
                 &mut explicit_cost,
@@ -268,9 +278,10 @@ fn collect_provider(
 
         for line in trimmed.lines() {
             if let Ok(value) = serde_json::from_str::<Value>(line) {
+                has_local_data = true;
+                sessions = sessions.saturating_add(1);
                 scan_json_value(
                     &value,
-                    &mut sessions,
                     &mut input_tokens,
                     &mut output_tokens,
                     &mut explicit_cost,
@@ -284,6 +295,7 @@ fn collect_provider(
         ProviderKind::Claude => {
             if let Some((s, i, o, c, n)) = collect_claude_code_stats() {
                 configured = true;
+                has_local_data = true;
                 // stats-cache.json is a superset — use whichever is larger.
                 sessions = sessions.max(s);
                 input_tokens = input_tokens.max(i);
@@ -297,6 +309,7 @@ fn collect_provider(
         ProviderKind::OpenAi => {
             if let Some((s, i, o, _c, n)) = collect_codex_session_usage() {
                 configured = true;
+                has_local_data = true;
                 // Codex data is separate from OpenAI API data — add it.
                 sessions = sessions.saturating_add(s);
                 input_tokens = input_tokens.saturating_add(i);
@@ -323,6 +336,14 @@ fn collect_provider(
         notes.push("no local usage logs found in common paths".to_string());
     }
 
+    let mut data_source = if !configured {
+        "unconfigured".to_string()
+    } else if has_local_data {
+        "local_logs".to_string()
+    } else {
+        "heuristic".to_string()
+    };
+
     if let Some(fetch) = live_fetch {
         match fetch_live_data_cached(provider, window, fetch) {
             Ok(Some(live)) => {
@@ -341,16 +362,24 @@ fn collect_provider(
                 }
                 notes.extend(live.notes);
                 notes.push(format!("live provider window: {}", window.label));
+                data_source = "live".to_string();
+                source_updated_at_epoch_secs = Utc::now().timestamp();
             }
             Ok(None) => {}
             Err(e) => notes.push(format!("live provider query failed: {}", e)),
         }
     }
 
+    if source_updated_at_epoch_secs == 0 {
+        source_updated_at_epoch_secs = Utc::now().timestamp();
+    }
+
     ProviderUsage {
         provider,
         configured,
         config_sources,
+        data_source,
+        source_updated_at_epoch_secs,
         sessions,
         total_input_tokens: input_tokens,
         total_output_tokens: output_tokens,
@@ -1000,9 +1029,22 @@ fn is_safe_bq_table_identifier(value: &str) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
 }
 
+fn modified_epoch_secs(metadata: &fs::Metadata) -> Option<i64> {
+    let modified = metadata.modified().ok()?;
+    let ts = chrono::DateTime::<Utc>::from(modified).timestamp();
+    Some(ts)
+}
+
+fn estimated_sessions(value: &Value) -> usize {
+    match value {
+        Value::Array(items) => items.len().max(1),
+        Value::Object(_) => 1,
+        _ => 0,
+    }
+}
+
 fn scan_json_value(
     value: &Value,
-    sessions: &mut usize,
     input_tokens: &mut u64,
     output_tokens: &mut u64,
     explicit_cost: &mut f64,
@@ -1010,11 +1052,10 @@ fn scan_json_value(
     match value {
         Value::Array(items) => {
             for item in items {
-                scan_json_value(item, sessions, input_tokens, output_tokens, explicit_cost);
+                scan_json_value(item, input_tokens, output_tokens, explicit_cost);
             }
         }
         Value::Object(map) => {
-            *sessions += 1;
             for (k, v) in map {
                 let key = k.to_ascii_lowercase();
                 if key.contains("input") && key.contains("token") {
@@ -1038,7 +1079,7 @@ fn scan_json_value(
                     }
                 }
 
-                scan_json_value(v, sessions, input_tokens, output_tokens, explicit_cost);
+                scan_json_value(v, input_tokens, output_tokens, explicit_cost);
             }
         }
         _ => {}
@@ -1063,10 +1104,7 @@ fn collect_claude_code_stats() -> Option<(usize, u64, u64, f64, Vec<String>)> {
 
     if let Some(model_usage) = value.get("modelUsage").and_then(Value::as_object) {
         for (_model, usage) in model_usage {
-            let input = usage
-                .get("inputTokens")
-                .and_then(value_as_u64)
-                .unwrap_or(0);
+            let input = usage.get("inputTokens").and_then(value_as_u64).unwrap_or(0);
             let cache_read = usage
                 .get("cacheReadInputTokens")
                 .and_then(value_as_u64)
@@ -1079,10 +1117,7 @@ fn collect_claude_code_stats() -> Option<(usize, u64, u64, f64, Vec<String>)> {
                 .get("outputTokens")
                 .and_then(value_as_u64)
                 .unwrap_or(0);
-            let cost = value_as_f64(
-                usage.get("costUSD").unwrap_or(&Value::Null),
-            )
-            .unwrap_or(0.0);
+            let cost = value_as_f64(usage.get("costUSD").unwrap_or(&Value::Null)).unwrap_or(0.0);
 
             input_tokens = input_tokens
                 .saturating_add(input)
@@ -1188,7 +1223,12 @@ fn collect_codex_session_usage() -> Option<(usize, u64, u64, f64, Vec<String>)> 
     ))
 }
 
-fn collect_jsonl_files_recursive(dir: &Path, depth: usize, max_depth: usize, out: &mut Vec<PathBuf>) {
+fn collect_jsonl_files_recursive(
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    out: &mut Vec<PathBuf>,
+) {
     if depth > max_depth {
         return;
     }
@@ -1272,20 +1312,22 @@ fn check_server_command(command: &str) -> (bool, String, String) {
         return (false, "binary path does not exist".to_string(), binary);
     }
 
-    match Command::new("sh")
-        .args(["-lc", &format!("command -v {}", binary)])
-        .output()
-    {
-        Ok(o) if o.status.success() => {
-            let resolved = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            (
-                true,
-                format!("resolved in PATH: {}", resolved),
-                binary.to_string(),
-            )
-        }
-        _ => (false, "binary not found in PATH".to_string(), binary),
+    if let Some(resolved) = resolve_binary_in_path(&binary) {
+        (
+            true,
+            format!("resolved in PATH: {}", resolved.display()),
+            binary.to_string(),
+        )
+    } else {
+        (false, "binary not found in PATH".to_string(), binary)
     }
+}
+
+fn resolve_binary_in_path(binary: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(binary))
+        .find(|candidate| candidate.exists() && candidate.is_file())
 }
 
 fn find_usage_like_files(root: &Path, max_depth: usize) -> Vec<PathBuf> {
@@ -1502,5 +1544,13 @@ mod tests {
             url_encode_component("2026-02-23T12:30:00+00:00"),
             "2026-02-23T12%3A30%3A00%2B00%3A00"
         );
+    }
+
+    #[test]
+    fn estimated_sessions_for_json_shapes() {
+        let obj: Value = serde_json::json!({"a":1});
+        let arr: Value = serde_json::json!([{"a":1}, {"b":2}]);
+        assert_eq!(estimated_sessions(&obj), 1);
+        assert_eq!(estimated_sessions(&arr), 2);
     }
 }
