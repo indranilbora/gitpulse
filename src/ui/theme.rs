@@ -62,7 +62,11 @@ pub fn block_focused(title: &str) -> Block<'_> {
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(BORDER_FOCUSED))
         .title(format!(" {} ", title))
-        .title_style(Style::default().fg(ACCENT_BLUE).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(ACCENT_BLUE)
+                .add_modifier(Modifier::BOLD),
+        )
 }
 
 // ─── Color mappers ─────────────────────────────────────────────────────────

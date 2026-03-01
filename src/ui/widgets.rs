@@ -37,13 +37,15 @@ pub fn render_stat_card(
 
     // Bottom line: label + dot
     let label_line = Line::from(vec![
-        Span::styled(format!("{} ", label), Style::default().fg(theme::FG_SECONDARY)),
+        Span::styled(
+            format!("{} ", label),
+            Style::default().fg(theme::FG_SECONDARY),
+        ),
         Span::styled("●", Style::default().fg(dot_color)),
     ])
     .alignment(Alignment::Center);
 
-    let chunks =
-        Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(inner);
+    let chunks = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(inner);
 
     frame.render_widget(Paragraph::new(value_line), chunks[0]);
     frame.render_widget(Paragraph::new(label_line), chunks[1]);

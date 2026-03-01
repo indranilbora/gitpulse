@@ -59,20 +59,14 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" ".repeat(padding)),
-                Span::styled(
-                    count_str,
-                    Style::default().fg(theme::FG_DIMMED),
-                ),
+                Span::styled(count_str, Style::default().fg(theme::FG_DIMMED)),
                 Span::raw(" "),
             ])
         } else {
             Line::from(vec![
                 Span::styled(label_part, Style::default().fg(theme::FG_SECONDARY)),
                 Span::raw(" ".repeat(padding)),
-                Span::styled(
-                    count_str,
-                    Style::default().fg(theme::FG_DIMMED),
-                ),
+                Span::styled(count_str, Style::default().fg(theme::FG_DIMMED)),
                 Span::raw(" "),
             ])
         };

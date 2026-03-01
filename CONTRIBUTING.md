@@ -69,3 +69,13 @@ The AI cost collector will use live provider APIs when configured and otherwise 
   brew install --HEAD indranilbora/agentpulse/agentpulse
   brew test indranilbora/agentpulse/agentpulse
   ```
+
+## Solo Release Checklist
+
+- [ ] `cargo fmt --all`
+- [ ] `cargo clippy --all-targets -- -D warnings`
+- [ ] `cargo test`
+- [ ] Manual TUI smoke test (`agentpulse`) with action confirm flow
+- [ ] Manual one-shot checks (`--once`, `--summary`, `--dashboard-json`)
+- [ ] README matches behavior (platform scope, watch mode status, shortcuts)
+- [ ] Tag release and verify Homebrew install path

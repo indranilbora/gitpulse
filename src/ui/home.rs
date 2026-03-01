@@ -13,7 +13,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // greeting
         Constraint::Length(5), // stat cards
-        Constraint::Fill(1),  // alerts list
+        Constraint::Fill(1),   // alerts list
     ])
     .split(area);
 
@@ -50,12 +50,10 @@ fn render_greeting(frame: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::default().fg(theme::BORDER_NORMAL));
 
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!(" {}", summary),
-                Style::default().fg(theme::FG_PRIMARY),
-            ),
-        ]))
+        Paragraph::new(Line::from(vec![Span::styled(
+            format!(" {}", summary),
+            Style::default().fg(theme::FG_PRIMARY),
+        )]))
         .block(block),
         area,
     );
@@ -119,12 +117,7 @@ fn render_stat_cards(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_alerts(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.alerts.is_empty() {
-        widgets::render_empty_state(
-            frame,
-            area,
-            "✓",
-            "No alerts. Workspace looks healthy.",
-        );
+        widgets::render_empty_state(frame, area, "✓", "No alerts. Workspace looks healthy.");
         return;
     }
 
@@ -149,9 +142,7 @@ fn render_alerts(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(format!(" {} ", dot), Style::default().fg(sev_color)),
                 Span::styled(
                     format!("{:<7}", a.severity),
-                    Style::default()
-                        .fg(sev_color)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(sev_color).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     truncate_str(&a.title, 32),

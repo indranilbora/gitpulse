@@ -184,6 +184,9 @@ show_clean = true
 
 # Repository directory names to skip entirely.
 # ignored_repos = ["old-project", "archived-thing"]
+
+# Experimental: planned file-watcher mode (currently polling is always used).
+# watch_mode = false
 "#
 }
 

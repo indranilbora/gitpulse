@@ -2,6 +2,18 @@
 
 AgentPulse is a real-time terminal dashboard for your local development environment.
 
+## Product Principles
+
+- Fast feedback first: monitor and triage in seconds.
+- Safe by default: all dashboard actions require explicit confirmation.
+- Clear context: every action shows intent and command preview.
+- Practical automation: prioritize solo-developer workflow speed.
+
+## Platform Scope
+
+- macOS-first runtime and UX tuning.
+- Linux and Windows are best-effort and may have feature gaps.
+
 ## What It Monitors
 
 - Git repo health: dirty/ahead/behind, detached state, stash, and recommended next actions
@@ -84,7 +96,9 @@ agentpulse --agent-json
 - `h` / `l` or `Tab`: switch dashboard section
 - `1..8`: jump to section
 - `j` / `k` or arrows: move selection in current section
-- `x`: run selected row action
+- `x`: review selected row action
+- `Enter` / `y`: confirm pending action
+- `Esc` / `n`: cancel pending action
 - `Enter`: open repo in editor (Repos section)
 - `o`: open repo in file manager (Repos section)
 - `r`: refresh now
@@ -124,6 +138,8 @@ show_clean = true
 ignored_repos = ["archive"]
 watch_mode = false
 ```
+
+`watch_mode` is currently experimental/planned. AgentPulse currently uses polling refresh for reliable cross-shell behavior.
 
 ## Real AI Usage and Cost Data
 

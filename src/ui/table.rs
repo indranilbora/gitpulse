@@ -4,9 +4,9 @@ use crate::app::App;
 use crate::dashboard::DashboardSection;
 use crate::git::{Repo, StatusColor};
 use ratatui::{
-    layout::{Constraint, Rect},
+    layout::{Constraint, Layout, Rect},
     style::Style,
-    widgets::{Cell, Row},
+    widgets::{Cell, Paragraph, Row, Wrap},
     Frame,
 };
 
@@ -60,15 +60,26 @@ fn build_entries<'a>(repos: &[&'a Repo], grouped: bool) -> (Vec<Entry<'a>>, Vec<
 // ─── top-level render ───────────────────────────────────────────────────────
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
+    let chunks = if area.height >= 8 {
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).split(area)
+    } else {
+        Layout::vertical([Constraint::Fill(1)]).split(area)
+    };
+    let main = chunks[0];
+
     match app.section {
         DashboardSection::Home => {} // handled by home.rs
-        DashboardSection::Repos => render_repos(frame, app, area),
-        DashboardSection::Worktrees => render_worktrees(frame, app, area),
-        DashboardSection::Processes => render_processes(frame, app, area),
-        DashboardSection::Dependencies => render_dependencies(frame, app, area),
-        DashboardSection::EnvAudit => render_env_audit(frame, app, area),
-        DashboardSection::McpHealth => render_mcp(frame, app, area),
-        DashboardSection::AiCosts => render_ai_costs(frame, app, area),
+        DashboardSection::Repos => render_repos(frame, app, main),
+        DashboardSection::Worktrees => render_worktrees(frame, app, main),
+        DashboardSection::Processes => render_processes(frame, app, main),
+        DashboardSection::Dependencies => render_dependencies(frame, app, main),
+        DashboardSection::EnvAudit => render_env_audit(frame, app, main),
+        DashboardSection::McpHealth => render_mcp(frame, app, main),
+        DashboardSection::AiCosts => render_ai_costs(frame, app, main),
+    }
+
+    if chunks.len() > 1 {
+        render_selected_detail(frame, app, chunks[1]);
     }
 }
 
@@ -169,7 +180,10 @@ fn render_repos(frame: &mut Frame, app: &App, area: Rect) {
                         Style::default().fg(theme::FG_DIMMED),
                     )
                 } else {
-                    (repo.status.branch.clone(), Style::default().fg(theme::FG_PRIMARY))
+                    (
+                        repo.status.branch.clone(),
+                        Style::default().fg(theme::FG_PRIMARY),
+                    )
                 };
 
                 let rec_color = match rec.short_action {
@@ -510,7 +524,11 @@ fn render_env_audit(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_mcp(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.mcp_servers.is_empty() {
-        widgets::render_empty_state(frame, area, "◇", "No MCP configuration files detected.");
+        if app.is_scanning {
+            widgets::render_empty_state(frame, area, "…", "Loading MCP health data…");
+        } else {
+            widgets::render_empty_state(frame, area, "◇", "No MCP configuration files detected.");
+        }
         return;
     }
 
@@ -570,12 +588,18 @@ fn render_mcp(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_ai_costs(frame: &mut Frame, app: &App, area: Rect) {
     if app.dashboard.providers.is_empty() {
-        widgets::render_empty_state(frame, area, "◇", "No AI provider data available yet.");
+        if app.is_scanning {
+            widgets::render_empty_state(frame, area, "…", "Loading AI usage and cost data…");
+        } else {
+            widgets::render_empty_state(frame, area, "◇", "No AI provider data available yet.");
+        }
         return;
     }
 
     let header = Row::new(vec![
         Cell::from("PROVIDER"),
+        Cell::from("SOURCE"),
+        Cell::from("UPDATED"),
         Cell::from("CONFIG"),
         Cell::from("SESSIONS"),
         Cell::from("INPUT TOKENS"),
@@ -602,6 +626,9 @@ fn render_ai_costs(frame: &mut Frame, app: &App, area: Rect) {
 
             Row::new(vec![
                 Cell::from(p.provider.as_str()).style(Style::default().fg(theme::FG_PRIMARY)),
+                Cell::from(p.data_source.clone()).style(Style::default().fg(theme::FG_SECONDARY)),
+                Cell::from(format_updated_secs(p.source_updated_at_epoch_secs))
+                    .style(Style::default().fg(theme::FG_DIMMED)),
                 Cell::from(if p.configured { "yes" } else { "no" }).style(Style::default().fg(
                     if p.configured {
                         theme::ACCENT_GREEN
@@ -635,6 +662,8 @@ fn render_ai_costs(frame: &mut Frame, app: &App, area: Rect) {
         rows,
         [
             Constraint::Length(12),
+            Constraint::Length(10),
+            Constraint::Length(10),
             Constraint::Length(8),
             Constraint::Length(9),
             Constraint::Length(14),
@@ -645,6 +674,145 @@ fn render_ai_costs(frame: &mut Frame, app: &App, area: Rect) {
         app.selected,
         app.dashboard.providers.len(),
     );
+}
+
+fn format_updated_secs(epoch_secs: i64) -> String {
+    if epoch_secs <= 0 {
+        return "unknown".to_string();
+    }
+    let now = chrono::Utc::now().timestamp();
+    let delta = now.saturating_sub(epoch_secs);
+    if delta < 60 {
+        format!("{}s ago", delta)
+    } else if delta < 3600 {
+        format!("{}m ago", delta / 60)
+    } else if delta < 86_400 {
+        format!("{}h ago", delta / 3600)
+    } else {
+        format!("{}d ago", delta / 86_400)
+    }
+}
+
+fn render_selected_detail(frame: &mut Frame, app: &App, area: Rect) {
+    let text = selected_detail_text(app);
+    frame.render_widget(
+        Paragraph::new(text)
+            .block(theme::block_default("Selected"))
+            .style(Style::default().fg(theme::FG_SECONDARY))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn selected_detail_text(app: &App) -> String {
+    match app.section {
+        DashboardSection::Repos => {
+            if let Some(repo) = app.selected_repo() {
+                let rec = agent::recommend(repo);
+                format!(
+                    "repo={} path={} branch={} dirty={} ahead={} behind={} next={} reason={}",
+                    repo.name,
+                    repo.path.display(),
+                    repo.status.branch,
+                    repo.status.uncommitted_count,
+                    repo.status.unpushed_count,
+                    repo.status.behind_count,
+                    rec.short_action,
+                    rec.reason
+                )
+            } else {
+                "No selected repo".to_string()
+            }
+        }
+        DashboardSection::Worktrees => app
+            .dashboard
+            .worktrees
+            .get(app.selected)
+            .map(|wt| {
+                format!(
+                    "repo={} path={} branch={} detached={} bare={} action={}",
+                    wt.repo,
+                    wt.path,
+                    wt.branch,
+                    wt.detached,
+                    wt.bare,
+                    wt.action
+                        .as_ref()
+                        .map(|a| a.command.clone())
+                        .unwrap_or_else(|| "none".to_string())
+                )
+            })
+            .unwrap_or_else(|| "No selected worktree".to_string()),
+        DashboardSection::Processes => app
+            .dashboard
+            .processes
+            .get(app.selected)
+            .map(|p| format!("repo={} pid={} elapsed={} cmd={}", p.repo, p.pid, p.elapsed, p.command))
+            .unwrap_or_else(|| "No selected process".to_string()),
+        DashboardSection::Dependencies => app
+            .dashboard
+            .dependencies
+            .get(app.selected)
+            .map(|d| {
+                format!(
+                    "repo={} ecosystems={} issues={} details={}",
+                    d.repo,
+                    d.ecosystems.join(","),
+                    d.issue_count,
+                    if d.issues.is_empty() {
+                        "clean".to_string()
+                    } else {
+                        d.issues.join(" | ")
+                    }
+                )
+            })
+            .unwrap_or_else(|| "No selected dependency row".to_string()),
+        DashboardSection::EnvAudit => app
+            .dashboard
+            .env_audit
+            .get(app.selected)
+            .map(|e| {
+                format!(
+                    "repo={} files={} missing=[{}] extra=[{}] tracked=[{}]",
+                    e.repo,
+                    e.env_files.join(","),
+                    e.missing_keys.join(","),
+                    e.extra_keys.join(","),
+                    e.tracked_secret_files.join(",")
+                )
+            })
+            .unwrap_or_else(|| "No selected env audit row".to_string()),
+        DashboardSection::McpHealth => app
+            .dashboard
+            .mcp_servers
+            .get(app.selected)
+            .map(|m| {
+                format!(
+                    "server={} source={} healthy={} detail={} command={}",
+                    m.server_name, m.source, m.healthy, m.detail, m.command
+                )
+            })
+            .unwrap_or_else(|| "No selected MCP row".to_string()),
+        DashboardSection::AiCosts => app
+            .dashboard
+            .providers
+            .get(app.selected)
+            .map(|p| {
+                format!(
+                    "provider={} source={} updated={} sessions={} input={} output={} cost=${:.2} notes={}",
+                    p.provider.as_str(),
+                    p.data_source,
+                    format_updated_secs(p.source_updated_at_epoch_secs),
+                    p.sessions,
+                    p.total_input_tokens,
+                    p.total_output_tokens,
+                    p.estimated_cost_usd,
+                    p.notes.join(" | ")
+                )
+            })
+            .unwrap_or_else(|| "No selected provider row".to_string()),
+        DashboardSection::Home => "Use Home for overview alerts".to_string(),
+    }
 }
 
 /// Determine elapsed time color: green < 1m, yellow < 5m, orange < 30m, red >= 30m.
