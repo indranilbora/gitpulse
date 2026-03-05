@@ -195,6 +195,7 @@ async fn test_urgency_ordering() {
             stash_count: 0,
             has_remote,
             is_detached: false,
+            probe_errors: Vec::new(),
         };
         r
     };

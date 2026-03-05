@@ -58,15 +58,23 @@ The AI cost collector will use live provider APIs when configured and otherwise 
 ## Release flow
 
 - Tag `v*` to trigger `.github/workflows/release.yml`
-- Workflow builds platform binaries and publishes to crates.io
+- Workflow builds platform binaries, uploads checksums, uploads a source tarball, and publishes to crates.io
 - Ensure `CARGO_REGISTRY_TOKEN` is configured in repository secrets
 - Homebrew tap formula is in `Formula/agentpulse.rb`
-- Formula currently tracks `HEAD` on `master`
-- After pushing formula updates, verify tap install with:
+- Formula has:
+  - stable pinned release (`url ... tag/revision`)
+  - `head` tracking `master`
+- Verify release assets locally (checksums) with:
+  ```bash
+  ./scripts/verify_release_assets.sh /path/to/downloaded/release-assets
+  ```
+- After pushing formula updates, verify stable and `HEAD` installs with:
   ```bash
   brew untap indranilbora/agentpulse || true
   brew tap indranilbora/agentpulse https://github.com/indranilbora/agentpulse
-  brew install --HEAD indranilbora/agentpulse/agentpulse
+  brew install indranilbora/agentpulse/agentpulse
+  brew test indranilbora/agentpulse/agentpulse
+  brew reinstall --HEAD indranilbora/agentpulse/agentpulse
   brew test indranilbora/agentpulse/agentpulse
   ```
 
@@ -78,4 +86,8 @@ The AI cost collector will use live provider APIs when configured and otherwise 
 - [ ] Manual TUI smoke test (`agentpulse`) with action confirm flow
 - [ ] Manual one-shot checks (`--once`, `--summary`, `--dashboard-json`)
 - [ ] README matches behavior (platform scope, watch mode status, shortcuts)
-- [ ] Tag release and verify Homebrew install path
+- [ ] Decide macOS distribution posture for this release:
+  - [ ] Sign + notarize binaries, or
+  - [ ] Explicitly mark release as unsigned/not-notarized in release notes
+- [ ] Tag release and verify Homebrew stable + `HEAD` install paths
+- [ ] Verify uploaded release checksums with `scripts/verify_release_assets.sh`

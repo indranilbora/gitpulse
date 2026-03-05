@@ -1,0 +1,7 @@
+<svg width="320" height="80" viewBox="0 0 320 80" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">AgentPulse Logo</title>
+  <desc id="desc">AgentPulse wordmark with pulse icon</desc>
+  <rect x="0" y="8" width="64" height="64" rx="10" fill="#0F766E" />
+  <path d="M12 40H24L30 28L36 52L42 34L48 40H52" stroke="#F2F0E9" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="82" y="49" fill="#1F2933" font-size="34" font-family="Iowan Old Style, Palatino Linotype, Book Antiqua, Palatino, serif" font-weight="700" letter-spacing="0.2">AgentPulse</text>
+</svg>

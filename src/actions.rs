@@ -1,4 +1,5 @@
 use crate::dashboard::ActionKind;
+use crate::path_utils::resolve_binary_in_path;
 use anyhow::anyhow;
 use anyhow::Result;
 use std::ffi::OsString;
@@ -260,13 +261,6 @@ fn append_env_pattern_to_gitignore(repo_path: &str) -> Result<()> {
     updated.push_str(".env*\n");
     fs::write(path, updated)?;
     Ok(())
-}
-
-fn resolve_binary_in_path(binary: &str) -> Option<std::path::PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join(binary))
-        .find(|candidate| candidate.exists() && candidate.is_file())
 }
 
 fn success_hint(action: &ActionKind) -> &'static str {

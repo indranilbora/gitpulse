@@ -65,6 +65,16 @@ jobs:
         run: |
           Copy-Item "target\${{ matrix.target }}\release\agentpulse.exe" "${{ matrix.asset_name }}"
 
+      - name: Smoke test binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          ./${{ matrix.asset_name }} --help > /dev/null
+
+      - name: Smoke test binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          .\${{ matrix.asset_name }} --help | Out-Null
+
       - name: Generate SHA256 checksum (Unix)
         if: matrix.os != 'windows-latest'
         run: |
@@ -85,9 +95,49 @@ jobs:
             ${{ matrix.asset_name }}
             ${{ matrix.asset_name }}.sha256
 
+  source-package:
+    name: Source Package + Homebrew Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build source tarball and checksums
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE="agentpulse-${VERSION}-source.tar.gz"
+          PREFIX="agentpulse-${VERSION}/"
+          git archive --format=tar.gz --prefix="$PREFIX" "$GITHUB_REF_NAME" > "$ARCHIVE"
+          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+
+          SHA="$(awk '{print $1}' "$ARCHIVE.sha256")"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${ARCHIVE}"
+          META="homebrew-stable-metadata-${VERSION}.txt"
+
+          {
+            echo "version: ${VERSION}"
+            echo "archive: ${ARCHIVE}"
+            echo "url: ${URL}"
+            echo "sha256: ${SHA}"
+            echo
+            echo "formula snippet:"
+            echo "  url \"${URL}\""
+            echo "  sha256 \"${SHA}\""
+          } > "$META"
+
+      - name: Upload source archive and metadata
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            agentpulse-*-source.tar.gz
+            agentpulse-*-source.tar.gz.sha256
+            homebrew-stable-metadata-*.txt
+
   publish-crates:
     name: Publish to crates.io
-    needs: build
+    needs:
+      - build
+      - source-package
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

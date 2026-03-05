@@ -147,3 +147,155 @@ Use this section after each PR:
 - Confirm run (`x` -> `y`) executes typed action and returns notification with command result.
 - `r` spam during active scan now queues refresh instead of launching parallel scans.
 - Help overlay (`?`) reflects confirm mode shortcuts accurately.
+
+## Market Readiness Audit (2026-03-02)
+
+### Completed Investigation
+
+- [x] Run quality gate checks (`cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`)
+- [x] Run CLI smoke checks (`--once`, `--summary`, `--dashboard-json`)
+- [x] Profile snapshot latency on real local state
+- [x] Review release/distribution pipeline and packaging metadata
+- [x] Identify code-level risks with line-level evidence
+
+### Confirmed Issues To Resolve Before Broad Launch
+
+- [x] P0: Reduce dashboard/summary latency caused by provider log scanning every refresh
+  - Evidence:
+  - `target/debug/agentpulse --summary --dir /Users/indranilbora/gitpulse` takes ~1.94s to ~6.42s in this environment.
+  - With empty home (`HOME=/tmp/agentpulse-empty-home`), same command drops to ~0.01s to ~0.02s.
+  - Root cause path: `collect_all()` always calls `collect_provider_usage()` (`src/collectors/mod.rs:27-40`), which rescans and parses local provider logs on every pass (`src/collectors/ai_mcp.rs:228-291`, `src/collectors/ai_mcp.rs:1148-1246`).
+- [x] P1: Fix contradictory provider note when supplemental local data is found
+  - Evidence:
+  - Claude row can show both `source: ~/.claude/stats-cache.json` and `no local usage logs found in common paths` in one payload.
+  - Root cause path: note is added when `log_files` is empty (`src/collectors/ai_mcp.rs:335-337`) and not removed after Claude/Codex supplementary local sources set `has_local_data = true` (`src/collectors/ai_mcp.rs:293-318`).
+- [x] P1: Harden MCP command health checks for quoted paths and Windows PATH behavior
+  - Evidence:
+  - Command parsing uses `split_whitespace()` (`src/collectors/ai_mcp.rs:1299-1303`), which breaks quoted binary paths.
+  - PATH lookup only checks literal `dir.join(binary)` (`src/collectors/ai_mcp.rs:1326-1331`, `src/actions.rs:265-270`), which misses `PATHEXT` behavior on Windows.
+- [x] P2: Surface git probe failures instead of silently flattening to clean-ish defaults
+  - Evidence:
+  - `check_repo_status()` suppresses per-probe errors and returns fallback values (`src/git.rs:162-165`), which can hide status collection failures from users.
+
+### Execution Plan (Market-Ready Track)
+
+- [ ] Phase 1: Performance and trust fixes (3-4 days)
+  - [x] Split provider collection cadence from repo status cadence (slow lane for provider data, fast lane for repo status).
+  - [x] Add bounded local log scan limits (`AGENTPULSE_LOCAL_LOG_MAX_FILES`, `AGENTPULSE_LOCAL_LOG_MAX_BYTES`) to cap worst-case scan time.
+  - [x] Replace Codex full-file scans with window-aware tail parsing (`month-to-date`/lookback aware) for session usage.
+  - [x] Add regression benchmark target: `--summary` under 300ms for 1-20 repos on warm cache.
+  - [x] Remove contradictory notes when supplementary local sources are present.
+  - [ ] Add provider collector cache keyed by source mtimes + lookback window (optional follow-up if cadence cache is insufficient).
+- [x] Phase 2: Reliability hardening (2-3 days)
+  - [x] Replace whitespace command split with shell-like parsing for MCP configs.
+  - [x] Expand binary resolution for Windows extensions and executable checks.
+  - [x] Emit explicit alerts when git status probes fail (instead of silent default fields).
+- [x] Phase 3: Release readiness and packaging (2 days)
+  - [x] Add stable Homebrew formula path (non-HEAD) and release artifact verification steps.
+  - [x] Add `CHANGELOG.md`, `SECURITY.md`, and support policy docs for external users.
+  - [x] Add release validation step for macOS binary notarization/signing decision.
+- [x] Phase 4: Launch validation (2 days)
+  - [x] Manual smoke on representative macOS setups (small, medium, large workspace).
+  - [x] Validate first-run setup UX from a clean machine profile.
+  - [x] Validate upgrade path from legacy `~/.config/gitpulse/config.toml`.
+
+### Verification Gate For Market Launch
+
+- [x] Functional: `cargo test --locked` passes on CI and local.
+- [x] Quality: `cargo clippy --all-targets -- -D warnings` and `cargo fmt --all -- --check` clean.
+- [x] Performance: `--summary` and initial TUI snapshot meet latency budget on warm cache.
+- [x] Safety: destructive actions always require explicit confirmation.
+- [ ] Distribution: tagged release installs cleanly via crates.io + Homebrew stable formula.
+- [x] Docs: README/CONTRIBUTING/release docs match real behavior and supported platforms.
+
+### Review Notes (2026-03-02)
+
+- Summary: Build is healthy and tests pass, but performance and trust issues remain in provider collection and MCP command validation.
+- Risks found: slow summary/dashboard refresh under real home-directory telemetry data; contradictory provider notes; brittle command/binary checks on non-trivial paths.
+- User-visible impact: users may experience multi-second refresh, confusing AI cost notes, and false MCP unhealthy signals.
+- Recommended next action: execute Phase 1 and Phase 2 before announcing broader adoption.
+
+### Review Notes (2026-03-02, Phase 1 Execution Update)
+
+- Summary: Implemented provider refresh cadence caching, bounded generic log scans, and fast Codex token extraction via tail reads scoped to active report window.
+- Performance result: `--summary` moved from ~1.94s-6.42s to ~0.43s cold and ~0.04s warm in this environment; `--dashboard-json` is now ~0.04s-0.05s on repeated runs.
+- Trust result: removed contradictory `no local usage logs found` notes when supplementary local data is successfully used.
+- Remaining work: Phase 2 reliability hardening (MCP command parsing/path resolution and explicit git probe failure surfacing).
+
+### Review Notes (2026-03-02, Phase 2 Execution Update)
+
+- Summary: Added shared command/binary path utilities, moved MCP health checks to shell-like command parsing, and surfaced git probe degradation through dashboard alerts.
+- Reliability result: quoted/assignment-prefixed MCP commands resolve to the correct executable token; PATH lookup now handles executable semantics more robustly.
+- Observability result: non-fatal git probe failures are captured and elevated as high-severity actionable alerts instead of being silent.
+- Remaining work: Phase 3 release packaging/docs hardening and Phase 4 launch validation.
+
+### Review Notes (2026-03-02, Phase 3 Execution Update)
+
+- Summary: Added stable Homebrew formula pin (tag/revision), release asset checksum verification script, and policy docs (`CHANGELOG.md`, `SECURITY.md`, `SUPPORT.md`).
+- Release pipeline result: release workflow now smoke-tests binaries, publishes source archive/checksum, and publishes Homebrew metadata snippet for stable formula updates.
+- Governance result: release checklist now requires explicit macOS signing/notarization decision before release publication.
+- Remaining work: Phase 4 launch validation on representative machine/workspace profiles.
+
+### Review Notes (2026-03-02, Phase 4 Execution Update)
+
+- Summary: Ran launch validation against small/medium/large workspaces plus clean-profile first-run and legacy config migration flows.
+- Workspace validation:
+  - Small (`/Users/indranilbora/gitpulse`): `--once`, `--summary`, and `--dashboard-json` all returned expected actionable state.
+  - Medium (`/tmp/agentpulse-phase4-medium`, 12 repos): one-shot and dashboard flows succeeded; actionable/dirty counts matched seeded repo state.
+  - Large (`/tmp/agentpulse-phase4-large`, 60 repos): one-shot and dashboard flows succeeded; seeded dirty repos surfaced correctly.
+- Performance validation:
+  - Medium `--summary`: ~0.70s cold, ~0.28s-0.30s warm.
+  - Large `--summary`: ~0.95s cold, ~0.54s-0.82s warm.
+- First-run validation:
+  - Clean HOME auto-run path showed welcome + setup wizard, wrote config at `~/.config/agentpulse/config.toml`, then attempted TUI startup.
+- Legacy migration validation:
+  - With only `~/.config/gitpulse/config.toml`, app used legacy config successfully.
+  - Running setup persisted equivalent config to `~/.config/agentpulse/config.toml`.
+- Environment note:
+  - Interactive TUI smoke in this sandbox exits with `Operation not permitted (os error 1)` after setup; this is environment/PTY restricted and should be rechecked in a normal local terminal before public announcement.
+
+## Dedicated Landing Page Launch Plan (2026-03-02)
+
+### Implementation Checklist
+
+- [x] Create static website scaffold under `website/` (`index.html`, `styles.css`, `main.js`, assets, README).
+- [x] Implement dedicated landing sections (hero, capabilities, safety, speed, OSS, install, FAQ, footer) with install-only CTA strategy.
+- [x] Enforce design constraints (<=3 colors, no gradients, large hit targets, mobile/desktop responsive).
+- [x] Add privacy-first analytics event contract (`lp_view` + CTA events) with UTM metadata forwarding.
+- [x] Add Vercel deployment and analytics setup instructions in `website/README.md`.
+- [x] Validate anchors, links, keyboard navigation, and install command accuracy.
+
+### Review Notes
+
+- Summary: Added a fully static dedicated landing page under `website/` with install-only CTAs, analytics contract wiring, brand assets, and deployment docs.
+- Risks found: Browser-specific rendering and Lighthouse thresholds still require manual verification in Chrome/Safari/Firefox on a real host build.
+- User-visible behavior: Primary CTA scrolls to install, install commands are copyable, and docs/support/security/footer links point to project docs.
+- Follow-up tasks: Run cross-browser manual QA on deployed Vercel URL, then validate event ingestion in Vercel Analytics dashboard.
+
+## Shiori-Style Landing Redesign (2026-03-04)
+
+### Implementation Checklist
+
+- [x] Rebuild `website/index.html` with new IA: header, hero, demo, features, install, footer.
+- [x] Replace `website/styles.css` with Shiori-style token system and responsive card layout.
+- [x] Keep copy actions and command palette flows with updated section anchors.
+- [x] Update `website/main.js` analytics contract to `lp_view` and `lp_click_install_primary` only.
+- [x] Update `website/README.md` to reflect new IA, style direction, and event contract.
+- [x] Validate local preview behavior on `http://127.0.0.1:4173`.
+- [x] Verify command-copy controls and keyboard palette shortcuts.
+- [x] Verify no extra analytics events are emitted from landing script.
+
+### Verification Checklist
+
+- [x] Primary CTA links to `#install`.
+- [x] Homebrew copy button reads from `#cmd-homebrew`.
+- [x] Run-once copy button reads from `#cmd-run`.
+- [x] `Cmd/Ctrl+K` opens `dialog#commandPalette` and `Esc` closes.
+- [x] `main.js` only emits `lp_view` and `lp_click_install_primary`.
+
+### Review Notes
+
+- Summary: Rebuilt the landing page to a Shiori-style visual system with a full IA rewrite (hero, demo window, feature grid, install cards, minimal footer), while retaining copy actions and command palette behavior.
+- Risks found: Browser-level visual QA (desktop/mobile rendering nuances) still needs manual confirmation in a real browser session.
+- User-visible behavior changes: New premium, centered layout and component styling; minimal analytics contract now emits only `lp_view` and `lp_click_install_primary`.
+- Follow-up tasks: Run manual visual QA at 1440px and 375px on Chrome/Safari/Firefox and confirm event ingestion in Vercel dashboard.

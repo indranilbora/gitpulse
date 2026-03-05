@@ -6,6 +6,7 @@ mod config;
 mod dashboard;
 mod git;
 mod monitor;
+mod path_utils;
 mod scanner;
 mod setup;
 mod ui;

@@ -16,6 +16,8 @@ pub struct RepoStatus {
     pub stash_count: usize,
     pub has_remote: bool,
     pub is_detached: bool,
+    /// Non-fatal probe errors captured while collecting repo status.
+    pub probe_errors: Vec<String>,
 }
 
 /// A discovered git repository with its current status.
@@ -159,10 +161,48 @@ pub async fn check_repo_status(repo_path: &Path) -> Result<RepoStatus> {
         get_stash_count(repo_path),
     );
 
-    let (branch, is_detached) = branch_res.unwrap_or_else(|_| ("unknown".to_string(), false));
-    let uncommitted_count = uncommitted_res.unwrap_or(0);
-    let (unpushed_count, behind_count, has_remote) = remote_res.unwrap_or((0, 0, false));
-    let stash_count = stash_res.unwrap_or(0);
+    let mut probe_errors = Vec::<String>::new();
+
+    let (branch, is_detached) = match branch_res {
+        Ok(v) => v,
+        Err(e) => {
+            probe_errors.push(format!(
+                "branch probe failed: {}",
+                compact_error(e.to_string())
+            ));
+            ("unknown".to_string(), false)
+        }
+    };
+    let uncommitted_count = match uncommitted_res {
+        Ok(v) => v,
+        Err(e) => {
+            probe_errors.push(format!(
+                "worktree probe failed: {}",
+                compact_error(e.to_string())
+            ));
+            0
+        }
+    };
+    let (unpushed_count, behind_count, has_remote) = match remote_res {
+        Ok(v) => v,
+        Err(e) => {
+            probe_errors.push(format!(
+                "remote probe failed: {}",
+                compact_error(e.to_string())
+            ));
+            (0, 0, false)
+        }
+    };
+    let stash_count = match stash_res {
+        Ok(v) => v,
+        Err(e) => {
+            probe_errors.push(format!(
+                "stash probe failed: {}",
+                compact_error(e.to_string())
+            ));
+            0
+        }
+    };
 
     Ok(RepoStatus {
         branch,
@@ -172,7 +212,17 @@ pub async fn check_repo_status(repo_path: &Path) -> Result<RepoStatus> {
         stash_count,
         has_remote,
         is_detached,
+        probe_errors,
     })
+}
+
+fn compact_error(raw: String) -> String {
+    let trimmed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out = trimmed.chars().take(120).collect::<String>();
+    if trimmed.chars().count() > 120 {
+        out.push_str("...");
+    }
+    out
 }
 
 #[cfg(test)]

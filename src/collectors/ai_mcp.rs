@@ -1,9 +1,11 @@
 use crate::dashboard::{ActionCommand, ActionKind, McpServerHealth, ProviderKind, ProviderUsage};
 use crate::git::Repo;
+use crate::path_utils::{extract_command_binary, resolve_binary_in_path};
 use chrono::{Datelike, Duration as ChronoDuration, TimeZone, Utc};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
@@ -238,13 +240,24 @@ fn collect_provider(
     log_files.sort();
     log_files.dedup();
 
+    let max_local_log_files = read_env_usize("AGENTPULSE_LOCAL_LOG_MAX_FILES", 64);
+    let max_local_log_bytes = read_env_u64("AGENTPULSE_LOCAL_LOG_MAX_BYTES", 20 * 1024 * 1024);
+
     let mut sessions = 0usize;
     let mut input_tokens = 0u64;
     let mut output_tokens = 0u64;
     let mut explicit_cost = 0.0f64;
     let mut has_local_data = false;
+    let mut scanned_log_count = 0usize;
+    let mut scanned_log_bytes = 0u64;
+    let mut local_log_cap_hit = false;
 
     for file in &log_files {
+        if scanned_log_count >= max_local_log_files || scanned_log_bytes >= max_local_log_bytes {
+            local_log_cap_hit = true;
+            break;
+        }
+
         let Ok(metadata) = fs::metadata(file) else {
             continue;
         };
@@ -255,10 +268,16 @@ fn collect_provider(
             notes.push(format!("skipped large file: {}", file.to_string_lossy()));
             continue;
         }
+        if scanned_log_bytes.saturating_add(metadata.len()) > max_local_log_bytes {
+            local_log_cap_hit = true;
+            break;
+        }
 
         let Ok(raw) = fs::read_to_string(file) else {
             continue;
         };
+        scanned_log_count = scanned_log_count.saturating_add(1);
+        scanned_log_bytes = scanned_log_bytes.saturating_add(metadata.len());
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             continue;
@@ -289,6 +308,13 @@ fn collect_provider(
             }
         }
     }
+    if local_log_cap_hit {
+        notes.push(format!(
+            "local log scan capped at {} files / {} MiB",
+            max_local_log_files,
+            max_local_log_bytes / (1024 * 1024)
+        ));
+    }
 
     // Merge supplementary local data sources that the generic log scan misses.
     match provider {
@@ -307,7 +333,7 @@ fn collect_provider(
             }
         }
         ProviderKind::OpenAi => {
-            if let Some((s, i, o, _c, n)) = collect_codex_session_usage() {
+            if let Some((s, i, o, _c, n)) = collect_codex_session_usage(window) {
                 configured = true;
                 has_local_data = true;
                 // Codex data is separate from OpenAI API data — add it.
@@ -332,7 +358,7 @@ fn collect_provider(
     if !configured {
         notes.push("not configured (no known env/config detected)".to_string());
     }
-    if log_files.is_empty() {
+    if log_files.is_empty() && !has_local_data {
         notes.push("no local usage logs found in common paths".to_string());
     }
 
@@ -1145,7 +1171,9 @@ fn collect_claude_code_stats() -> Option<(usize, u64, u64, f64, Vec<String>)> {
 /// `payload.type = "token_count"` entries. Each session file's LAST such
 /// entry gives cumulative token usage for that session.
 /// Returns (sessions, input_tokens, output_tokens, cost_usd=0, notes).
-fn collect_codex_session_usage() -> Option<(usize, u64, u64, f64, Vec<String>)> {
+fn collect_codex_session_usage(
+    window: &ReportWindow,
+) -> Option<(usize, u64, u64, f64, Vec<String>)> {
     let sessions_dir = home_join(".codex/sessions")?;
     if !sessions_dir.is_dir() {
         return None;
@@ -1163,47 +1191,17 @@ fn collect_codex_session_usage() -> Option<(usize, u64, u64, f64, Vec<String>)> 
     let mut total_output = 0u64;
 
     for file in &session_files {
-        let Ok(raw) = fs::read_to_string(file) else {
+        let Ok(metadata) = fs::metadata(file) else {
             continue;
         };
-
-        // Find the last token_count entry in this session file.
-        let mut last_input = 0u64;
-        let mut last_output = 0u64;
-        let mut found = false;
-
-        for line in raw.lines() {
-            let Ok(value) = serde_json::from_str::<Value>(line) else {
-                continue;
-            };
-
-            let is_token_count = value
-                .get("payload")
-                .and_then(|p| p.get("type"))
-                .and_then(Value::as_str)
-                == Some("token_count");
-
-            if !is_token_count {
-                continue;
-            }
-
-            found = true;
-            if let Some(usage) = value
-                .get("payload")
-                .and_then(|p| p.get("total_token_usage"))
-            {
-                last_input = usage
-                    .get("input_tokens")
-                    .and_then(value_as_u64)
-                    .unwrap_or(0);
-                last_output = usage
-                    .get("output_tokens")
-                    .and_then(value_as_u64)
-                    .unwrap_or(0);
-            }
+        let Some(modified) = modified_epoch_secs(&metadata) else {
+            continue;
+        };
+        if modified < window.start_epoch_secs || modified > window.end_epoch_secs {
+            continue;
         }
 
-        if found {
+        if let Some((last_input, last_output)) = extract_last_codex_token_usage(file) {
             total_sessions += 1;
             total_input = total_input.saturating_add(last_input);
             total_output = total_output.saturating_add(last_output);
@@ -1219,8 +1217,87 @@ fn collect_codex_session_usage() -> Option<(usize, u64, u64, f64, Vec<String>)> 
         total_input,
         total_output,
         0.0,
-        vec![format!("source: {}", sessions_dir.to_string_lossy())],
+        vec![format!(
+            "source: {} (window: {})",
+            sessions_dir.to_string_lossy(),
+            window.label
+        )],
     ))
+}
+
+fn extract_last_codex_token_usage(path: &Path) -> Option<(u64, u64)> {
+    const CHUNK_SIZE: usize = 64 * 1024;
+
+    let mut file = fs::File::open(path).ok()?;
+    let mut cursor = file.seek(SeekFrom::End(0)).ok()?;
+    if cursor == 0 {
+        return None;
+    }
+
+    let mut carry = Vec::<u8>::new();
+
+    while cursor > 0 {
+        let read_size = CHUNK_SIZE.min(cursor as usize);
+        cursor = cursor.saturating_sub(read_size as u64);
+        file.seek(SeekFrom::Start(cursor)).ok()?;
+
+        let mut chunk = vec![0u8; read_size];
+        file.read_exact(&mut chunk).ok()?;
+
+        let mut combined = chunk;
+        combined.extend_from_slice(&carry);
+
+        let scan_start = if cursor == 0 {
+            0
+        } else if let Some(idx) = combined.iter().position(|b| *b == b'\n') {
+            idx.saturating_add(1)
+        } else {
+            carry = combined;
+            continue;
+        };
+
+        for line in combined[scan_start..].rsplit(|b| *b == b'\n') {
+            if let Some(usage) = parse_codex_token_line(line) {
+                return Some(usage);
+            }
+        }
+
+        carry = combined[..scan_start].to_vec();
+    }
+
+    parse_codex_token_line(&carry)
+}
+
+fn parse_codex_token_line(line: &[u8]) -> Option<(u64, u64)> {
+    let raw = std::str::from_utf8(line).ok()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    let value = serde_json::from_str::<Value>(raw).ok()?;
+    let payload = value.get("payload")?;
+    let is_token_count = payload.get("type").and_then(Value::as_str) == Some("token_count");
+    if !is_token_count {
+        return None;
+    }
+
+    let usage = payload.get("total_token_usage").or_else(|| {
+        payload
+            .get("info")
+            .and_then(|info| info.get("total_token_usage"))
+    })?;
+
+    let input = usage
+        .get("input_tokens")
+        .or_else(|| usage.get("inputTokens"))
+        .and_then(value_as_u64)
+        .unwrap_or(0);
+    let output = usage
+        .get("output_tokens")
+        .or_else(|| usage.get("outputTokens"))
+        .and_then(value_as_u64)
+        .unwrap_or(0);
+    Some((input, output))
 }
 
 fn collect_jsonl_files_recursive(
@@ -1296,11 +1373,7 @@ fn check_server_command(command: &str) -> (bool, String, String) {
         );
     }
 
-    let binary = command
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_string();
+    let binary = extract_command_binary(command).unwrap_or_default();
     if binary.is_empty() {
         return (false, "missing command".to_string(), String::new());
     }
@@ -1321,13 +1394,6 @@ fn check_server_command(command: &str) -> (bool, String, String) {
     } else {
         (false, "binary not found in PATH".to_string(), binary)
     }
-}
-
-fn resolve_binary_in_path(binary: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join(binary))
-        .find(|candidate| candidate.exists() && candidate.is_file())
 }
 
 fn find_usage_like_files(root: &Path, max_depth: usize) -> Vec<PathBuf> {
@@ -1472,6 +1538,13 @@ mod tests {
     }
 
     #[test]
+    fn check_server_command_handles_env_prefix() {
+        let (healthy, _, binary) = check_server_command("FOO=1 git --version");
+        assert!(healthy);
+        assert_eq!(binary, "git");
+    }
+
+    #[test]
     fn accumulates_openai_usage_and_cost_payloads() {
         let usage: Value = serde_json::from_str(
             r#"{
@@ -1552,5 +1625,37 @@ mod tests {
         let arr: Value = serde_json::json!([{"a":1}, {"b":2}]);
         assert_eq!(estimated_sessions(&obj), 1);
         assert_eq!(estimated_sessions(&arr), 2);
+    }
+
+    #[test]
+    fn extracts_last_codex_token_usage_from_tail() {
+        let path = std::env::temp_dir().join("agentpulse_codex_tail_test.jsonl");
+        let _ = fs::remove_file(&path);
+        let raw = r#"{"payload":{"type":"token_count","total_token_usage":{"input_tokens":11,"output_tokens":22}}}
+{"payload":{"type":"other","value":1}}
+{"payload":{"type":"token_count","total_token_usage":{"input_tokens":33,"output_tokens":44}}}
+"#;
+        fs::write(&path, raw).unwrap();
+
+        let usage = extract_last_codex_token_usage(&path);
+        assert_eq!(usage, Some((33, 44)));
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn codex_tail_usage_none_when_missing_token_count() {
+        let path = std::env::temp_dir().join("agentpulse_codex_tail_none_test.jsonl");
+        let _ = fs::remove_file(&path);
+        fs::write(
+            &path,
+            "{\"payload\":{\"type\":\"message\",\"text\":\"hello\"}}\n{\"event\":\"x\"}\n",
+        )
+        .unwrap();
+
+        let usage = extract_last_codex_token_usage(&path);
+        assert!(usage.is_none());
+
+        let _ = fs::remove_file(&path);
     }
 }

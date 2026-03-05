@@ -66,8 +66,46 @@ pub fn collect_worktrees(repos: &[Repo]) -> Vec<WorktreeRow> {
     rows
 }
 
-pub fn collect_git_alerts(repo_rows: &[RepoRow], worktrees: &[WorktreeRow]) -> Vec<DashboardAlert> {
+pub fn collect_git_alerts(
+    repos: &[Repo],
+    repo_rows: &[RepoRow],
+    worktrees: &[WorktreeRow],
+) -> Vec<DashboardAlert> {
     let mut alerts = Vec::new();
+
+    for repo in repos {
+        if repo.status.probe_errors.is_empty() {
+            continue;
+        }
+        let first = repo
+            .status
+            .probe_errors
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "status probe failed".to_string());
+        let detail = if repo.status.probe_errors.len() > 1 {
+            format!(
+                "{} (+{} more)",
+                first,
+                repo.status.probe_errors.len().saturating_sub(1)
+            )
+        } else {
+            first
+        };
+
+        alerts.push(DashboardAlert {
+            severity: "high".to_string(),
+            title: format!("{} status checks degraded", repo.name),
+            detail,
+            repo: Some(repo.name.clone()),
+            action: Some(ActionCommand::new(
+                "retry git status",
+                ActionKind::GitStatus {
+                    repo_path: repo.path.to_string_lossy().to_string(),
+                },
+            )),
+        });
+    }
 
     for row in repo_rows {
         if row.dirty > 0 {
@@ -251,6 +289,7 @@ mod tests {
             stash_count: 0,
             has_remote: true,
             is_detached: false,
+            probe_errors: Vec::new(),
         };
 
         let raw = "worktree /tmp/example\nHEAD deadbeef\nbranch refs/heads/main\n\nworktree /tmp/example-wt\nHEAD cafe\ndetached\n";
@@ -258,5 +297,27 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].branch, "main");
         assert!(rows[1].detached);
+    }
+
+    #[test]
+    fn emits_alert_for_probe_errors() {
+        let mut repo = Repo::new(PathBuf::from("/tmp/example"));
+        repo.status = RepoStatus {
+            branch: "main".to_string(),
+            uncommitted_count: 0,
+            unpushed_count: 0,
+            behind_count: 0,
+            stash_count: 0,
+            has_remote: true,
+            is_detached: false,
+            probe_errors: vec!["branch probe failed: timeout".to_string()],
+        };
+
+        let repos = vec![repo];
+        let repo_rows = collect_repo_rows(&repos);
+        let alerts = collect_git_alerts(&repos, &repo_rows, &[]);
+        assert!(alerts
+            .iter()
+            .any(|a| a.title.contains("status checks degraded")));
     }
 }

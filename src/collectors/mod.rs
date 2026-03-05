@@ -3,6 +3,8 @@ use crate::dashboard::{
     RepoRow, WorktreeRow,
 };
 use crate::git::Repo;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 pub mod ai_mcp;
 pub mod git_worktrees;
@@ -24,18 +26,56 @@ pub struct CollectorOutput {
     pub providers: Vec<ProviderUsage>,
 }
 
+#[derive(Clone)]
+struct ProviderSnapshotCacheEntry {
+    generated_at: Instant,
+    providers: Vec<ProviderUsage>,
+}
+
+static PROVIDER_SNAPSHOT_CACHE: OnceLock<Mutex<Option<ProviderSnapshotCacheEntry>>> =
+    OnceLock::new();
+
 pub fn collect_all(repos: &[Repo]) -> CollectorOutput {
     let repo_rows = collect_repo_rows(repos);
     let worktrees = collect_worktrees(repos);
 
     CollectorOutput {
-        alerts: collect_git_alerts(&repo_rows, &worktrees),
+        alerts: collect_git_alerts(repos, &repo_rows, &worktrees),
         repos: repo_rows,
         worktrees,
         processes: collect_repo_processes(repos),
         dependencies: collect_dependency_health(repos),
         env_audit: collect_env_audit(repos),
         mcp_servers: collect_mcp_servers(repos),
-        providers: collect_provider_usage(),
+        providers: collect_provider_usage_cadenced(),
     }
+}
+
+fn collect_provider_usage_cadenced() -> Vec<ProviderUsage> {
+    let refresh_secs = std::env::var("AGENTPULSE_PROVIDER_REFRESH_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(45);
+    let refresh_after = Duration::from_secs(refresh_secs);
+
+    let cache = PROVIDER_SNAPSHOT_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(entry) = guard.as_ref() {
+            if entry.generated_at.elapsed() < refresh_after {
+                return entry.providers.clone();
+            }
+        }
+    }
+
+    let providers = collect_provider_usage();
+
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(ProviderSnapshotCacheEntry {
+            generated_at: Instant::now(),
+            providers: providers.clone(),
+        });
+    }
+
+    providers
 }

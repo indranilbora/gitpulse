@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentPulse | Local Engineering Command Center</title>
+    <meta
+      name="description"
+      content="AgentPulse helps you spot repo risk early with local-first visibility across git health, worktrees, processes, dependencies, and AI usage."
+    />
+    <meta property="og:title" content="AgentPulse" />
+    <meta property="og:description" content="Local engineering command center with trust-first actions." />
+    <meta property="og:image" content="/assets/og-image.png" />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/assets/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css?v=20260305-1" />
+    <script>
+      window.va =
+        window.va ||
+        function () {
+          (window.vaq = window.vaq || []).push(arguments);
+        };
+    </script>
+    <script defer src="/_vercel/insights/script.js"></script>
+    <script defer src="/main.js?v=20260305-1"></script>
+  </head>
+  <body>
+    <a href="#main" class="skip-link">Skip to content</a>
+
+    <header class="site-header">
+      <div class="shell header-row">
+        <a href="#hero" class="brand" aria-label="AgentPulse home">
+          <img src="/assets/logo.svg" width="28" height="28" alt="" />
+          <span>AgentPulse</span>
+        </a>
+        <nav aria-label="Primary">
+          <a href="#demo">Demo</a>
+          <a href="#features">Features</a>
+          <a href="#install">Install</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main" class="main-flow">
+      <section id="hero" class="hero shell reveal">
+        <p class="eyebrow">Local first. Built for engineers.</p>
+        <h1>AgentPulse</h1>
+        <p class="hero-copy">
+          A calm command center for active repositories. See risk, run safe actions, and keep delivery momentum without leaving your terminal.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#install" data-track-primary>Install AgentPulse</a>
+          <a class="button" href="https://github.com/indranilbora/agentpulse" target="_blank" rel="noreferrer">View GitHub</a>
+        </div>
+      </section>
+
+      <section id="demo" class="section shell reveal">
+        <div class="section-intro">
+          <h2>One glance. One decision.</h2>
+          <p>Repo health, actionable checks, and context in one focused surface.</p>
+        </div>
+        <figure class="demo-window">
+          <div class="window-bar" aria-hidden="true">
+            <div class="window-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="window-pill">Dashboard</div>
+            <div class="window-avatar"></div>
+          </div>
+          <div class="window-shot">
+            <img
+              src="/assets/screenshots/agentpulse-cli-live.svg?v=20260305-1"
+              alt="AgentPulse CLI screenshot showing real --once output"
+              loading="eager"
+              decoding="sync"
+            />
+          </div>
+          <figcaption>Live terminal capture from AgentPulse runtime.</figcaption>
+        </figure>
+      </section>
+
+      <section id="features" class="section shell reveal">
+        <div class="section-intro">
+          <h2>Built for fast, safe triage.</h2>
+          <p>Every workflow is optimized for clear decisions and explicit execution.</p>
+        </div>
+        <div class="feature-grid" role="list">
+          <article class="feature-card" role="listitem">
+            <h3>Action-first checks</h3>
+            <p>Move from detection to execution in one keyboard flow.</p>
+          </article>
+          <article class="feature-card" role="listitem">
+            <h3>Confirmation on risk</h3>
+            <p>Destructive actions are gated with deliberate confirmation.</p>
+          </article>
+          <article class="feature-card" role="listitem">
+            <h3>Worktree visibility</h3>
+            <p>Track active branches and state across parallel efforts.</p>
+          </article>
+          <article class="feature-card" role="listitem">
+            <h3>Dependency drift signals</h3>
+            <p>Catch stale or risky dependency states before release pain.</p>
+          </article>
+          <article class="feature-card" role="listitem">
+            <h3>Local process awareness</h3>
+            <p>Spot runaway or conflicting services tied to your repos.</p>
+          </article>
+          <article class="feature-card" role="listitem">
+            <h3>Automation-ready output</h3>
+            <p>Use once mode and JSON exports for scripts and pipelines.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="install" class="section shell reveal">
+        <div class="section-intro">
+          <h2>Install in under a minute.</h2>
+          <p>Copy and run from your terminal.</p>
+        </div>
+        <div class="install-grid">
+          <article class="install-card">
+            <h3>Homebrew</h3>
+            <pre><code id="cmd-homebrew">brew tap indranilbora/agentpulse https://github.com/indranilbora/agentpulse
+brew install indranilbora/agentpulse/agentpulse</code></pre>
+            <button class="button button-primary" type="button" data-copy-target="cmd-homebrew">Copy Homebrew</button>
+          </article>
+          <article class="install-card">
+            <h3>Run once</h3>
+            <pre><code id="cmd-run">agentpulse --once
+agentpulse --once --json</code></pre>
+            <button class="button button-primary" type="button" data-copy-target="cmd-run">Copy Run Commands</button>
+          </article>
+        </div>
+        <p id="copy-status" class="copy-status" aria-live="polite"></p>
+        <div class="install-actions">
+          <a class="button" href="https://github.com/indranilbora/agentpulse/blob/master/README.md" target="_blank" rel="noreferrer">Read Docs</a>
+          <button class="button" type="button" data-open-command>Open Command Palette</button>
+          <a class="button" href="https://github.com/indranilbora/agentpulse" target="_blank" rel="noreferrer">Open Repository</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer reveal">
+      <div class="shell footer-wrap">
+        <a href="#hero" class="brand brand-small" aria-label="Back to top">
+          <img src="/assets/logo.svg" width="20" height="20" alt="" />
+          <span>AgentPulse</span>
+        </a>
+        <p>Built by <a href="https://github.com/indranilbora" target="_blank" rel="noreferrer">Indranil Bora</a></p>
+        <p class="footer-links">
+          <a href="https://github.com/indranilbora/agentpulse/blob/master/README.md" target="_blank" rel="noreferrer">README</a>
+          <a href="https://github.com/indranilbora/agentpulse/blob/master/SUPPORT.md" target="_blank" rel="noreferrer">Support</a>
+          <a href="https://github.com/indranilbora/agentpulse/blob/master/SECURITY.md" target="_blank" rel="noreferrer">Security</a>
+        </p>
+      </div>
+    </footer>
+
+    <dialog id="commandPalette" class="palette" aria-label="Command palette">
+      <form method="dialog" class="palette-shell">
+        <div class="palette-head">
+          <strong>Command Palette</strong>
+          <button value="cancel" class="close" aria-label="Close palette">Close</button>
+        </div>
+        <a href="#hero">Jump to Hero</a>
+        <a href="#demo">Jump to Demo</a>
+        <a href="#features">Jump to Features</a>
+        <a href="#install">Jump to Install</a>
+        <a href="https://github.com/indranilbora/agentpulse" target="_blank" rel="noreferrer">Open GitHub</a>
+      </form>
+    </dialog>
+  </body>
+</html>

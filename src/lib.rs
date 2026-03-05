@@ -5,4 +5,5 @@ pub mod dashboard;
 pub mod config;
 pub mod git;
 pub mod monitor;
+pub mod path_utils;
 pub mod scanner;

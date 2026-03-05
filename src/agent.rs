@@ -250,6 +250,7 @@ mod tests {
                 stash_count: 0,
                 has_remote: true,
                 is_detached: true,
+                probe_errors: Vec::new(),
             },
         );
         let rec = recommend(&repo);
@@ -268,6 +269,7 @@ mod tests {
                 stash_count: 0,
                 has_remote: true,
                 is_detached: false,
+                probe_errors: Vec::new(),
             },
         );
         let rec = recommend(&repo);
@@ -287,6 +289,7 @@ mod tests {
                 stash_count: 0,
                 has_remote: true,
                 is_detached: false,
+                probe_errors: Vec::new(),
             },
         );
         let rec = recommend(&repo);
